@@ -1,0 +1,310 @@
+import math
+import tempfile
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+import volatility_fitting_daily as vf
+
+
+SPX_DIV_YIELD = 0.0134
+SPY_DIVS = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
+DATA_FETCH_VERSION = "six-tenors-no-1w"
+
+
+st.set_page_config(
+    page_title="Volatility Surface Dashboard",
+    page_icon="",
+    layout="wide",
+)
+
+
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 1.4rem; }
+    h1, h2, h3 { letter-spacing: 0; }
+    div[data-testid="stMetric"] {
+        border: 1px solid #e7e7e7;
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: #ffffff;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def get_secret(name):
+    try:
+        return st.secrets.get(name, "")
+    except Exception:
+        return ""
+
+
+def load_excel_from_upload(uploaded_file):
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp.write(uploaded_file.getvalue())
+        tmp_path = tmp.name
+    return vf.load_xlsx(tmp_path)
+
+
+@st.cache_data(show_spinner=False)
+def load_latest_cached(fred_api_key, version):
+    return vf.load_latest_data(fred_api_key)
+
+
+@st.cache_data(show_spinner=False)
+def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor):
+    rate_curve = vf.build_curve(per_tenor, curve)
+    div_list = [] if ydiv > 0 else divs
+
+    if american:
+        repo = vf.fit_repo_am(spot, rate_curve, div_list, quotes)
+    else:
+        repo = vf.fit_repo_eu(spot, rate_curve, div_list, quotes)
+
+    ivs = vf.compute_ivs(spot, rate_curve, div_list, repo, quotes, american)
+    coefs = vf.fit_surface(spot, rate_curve, div_list, repo, ivs)
+
+    repo_rows = []
+    for t in sorted(repo):
+        r = vf.interp_rate(rate_curve, t)
+        s_eff = spot - vf.pv_divs(div_list, t, rate_curve)
+        forward = s_eff * math.exp((r - repo[t]) * t)
+        repo_rows.append({
+            "asset": label,
+            "tenor": t,
+            "rate": r,
+            "repo": repo[t],
+            "forward": forward,
+        })
+
+    iv_rows = []
+    for t, rows in ivs.items():
+        r = vf.interp_rate(rate_curve, t)
+        forward = (spot - vf.pv_divs(div_list, t, rate_curve)) * math.exp((r - repo[t]) * t)
+        for strike, is_call, iv in rows:
+            iv_rows.append({
+                "asset": label,
+                "tenor": t,
+                "strike": strike,
+                "option": "Call" if is_call else "Put",
+                "iv": iv,
+                "iv_percent": 100 * iv,
+                "log_moneyness": math.log(strike / forward),
+                "forward": forward,
+            })
+
+    coef_rows = []
+    for t, (a, b, c) in sorted(coefs.items()):
+        coef_rows.append({
+            "asset": label,
+            "tenor": t,
+            "a": a,
+            "b": b,
+            "c": c,
+        })
+
+    return pd.DataFrame(repo_rows), pd.DataFrame(iv_rows), pd.DataFrame(coef_rows)
+
+
+def fitted_surface_figure(asset, iv_df, coef_df):
+    fig = go.Figure()
+    if iv_df.empty or coef_df.empty:
+        return fig
+
+    tenor_ranges = {}
+    for tenor in sorted(coef_df["tenor"].unique()):
+        part = iv_df[iv_df["tenor"] == tenor]
+        if not part.empty:
+            tenor_ranges[tenor] = (float(part["log_moneyness"].min()), float(part["log_moneyness"].max()))
+
+    if not tenor_ranges:
+        return fig
+
+    # Use a broad display range, but mask each tenor outside its own observed
+    # range. That avoids quadratic extrapolation spikes without collapsing the
+    # surface into a skinny ribbon when one tenor has a narrower strike range.
+    x_min = max(float(iv_df["log_moneyness"].quantile(0.03)), -0.08)
+    x_max = min(float(iv_df["log_moneyness"].quantile(0.97)), 0.06)
+    x_grid = np.linspace(x_min, x_max, 60)
+    tenors = sorted(coef_df["tenor"].unique())
+
+    z_rows = []
+    for tenor in tenors:
+        row = coef_df.loc[coef_df["tenor"] == tenor].iloc[0]
+        fitted = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+        lo, hi = tenor_ranges[tenor]
+        fitted = np.where((x_grid >= lo) & (x_grid <= hi), fitted, np.nan)
+        z_rows.append(np.clip(fitted, 5, 35))
+
+    fig.add_trace(go.Surface(
+        x=x_grid,
+        y=tenors,
+        z=np.array(z_rows),
+        colorscale="Viridis",
+        opacity=0.86,
+        name="Fitted surface",
+        connectgaps=False,
+        colorbar={"title": "IV %"},
+    ))
+
+    fig.add_trace(go.Scatter3d(
+        x=iv_df["log_moneyness"],
+        y=iv_df["tenor"],
+        z=iv_df["iv_percent"],
+        mode="markers",
+        marker={"size": 4, "color": iv_df["iv_percent"], "colorscale": "Turbo"},
+        name="Market IV points",
+    ))
+
+    fig.update_layout(
+        title=f"{asset} Implied Volatility Surface",
+        height=620,
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
+        scene={
+            "xaxis_title": "log(K / F)",
+            "yaxis_title": "Time to expiry",
+            "zaxis_title": "IV %",
+        },
+    )
+    return fig
+
+
+def smile_figure(asset, iv_df):
+    fig = go.Figure()
+    for tenor in sorted(iv_df["tenor"].unique()):
+        part = iv_df[iv_df["tenor"] == tenor].sort_values("log_moneyness")
+        fig.add_trace(go.Scatter(
+            x=part["log_moneyness"],
+            y=part["iv_percent"],
+            mode="markers+lines",
+            name=f"t={tenor:.3f}",
+            text=part["option"] + " K=" + part["strike"].round(2).astype(str),
+        ))
+
+    fig.update_layout(
+        title=f"{asset} Volatility Smiles",
+        height=420,
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
+        xaxis_title="log(K / F)",
+        yaxis_title="IV %",
+        legend_title="Tenor",
+    )
+    return fig
+
+
+def format_percent_table(df, cols):
+    out = df.copy()
+    for col in cols:
+        if col in out:
+            out[col] = 100 * out[col]
+    return out
+
+
+st.title("Volatility Surface Dashboard")
+st.caption("SPX/SPY implied volatility construction from Excel inputs or latest market data.")
+
+with st.sidebar:
+    st.header("Inputs")
+    mode = st.radio("Data source", ["Fetch latest data", "Upload Excel file"])
+    asset_choice = st.radio("Asset", ["SPX", "SPY", "Both"], horizontal=True)
+
+    fred_key = ""
+    uploaded = None
+    if mode == "Fetch latest data":
+        default_key = get_secret("FRED_API_KEY")
+        fred_key = st.text_input("FRED API key", value=default_key, type="password")
+        st.caption("For hosting, add this as FRED_API_KEY in Streamlit secrets.")
+    else:
+        uploaded = st.file_uploader("Upload OptionData.xlsx", type=["xlsx"])
+
+    run_clicked = st.button("Run analysis", type="primary", use_container_width=True)
+
+st.markdown(
+    "This dashboard fits a repo curve, computes implied volatilities, filters option data by moneyness, "
+    "and visualizes the fitted quadratic surface."
+)
+
+if not run_clicked:
+    st.info("Choose a data source in the sidebar and click Run analysis.")
+    st.stop()
+
+try:
+    with st.spinner("Loading market data..."):
+        if mode == "Fetch latest data":
+            if not fred_key:
+                st.error("Enter a FRED API key or add FRED_API_KEY to Streamlit secrets.")
+                st.stop()
+            data = load_latest_cached(fred_key, DATA_FETCH_VERSION)
+            source_label = "Latest available yfinance option chains + FRED Treasury curve"
+        else:
+            if uploaded is None:
+                st.error("Upload an OptionData.xlsx file first.")
+                st.stop()
+            data = load_excel_from_upload(uploaded)
+            source_label = uploaded.name
+except Exception as exc:
+    st.error(str(exc))
+    st.stop()
+
+assets = []
+if asset_choice in ("SPX", "Both"):
+    assets.append(("SPX", data["spx_spot"], [], SPX_DIV_YIELD, data["spx_quotes"], False, data["spx_rates"]))
+if asset_choice in ("SPY", "Both"):
+    assets.append(("SPY", data["spy_spot"], SPY_DIVS, 0.0, data["spy_quotes"], True, data["spy_rates"]))
+
+st.subheader("Run Summary")
+cols = st.columns(4)
+cols[0].metric("Source", mode)
+cols[1].metric("SPX spot", f"{data['spx_spot']:,.2f}")
+cols[2].metric("SPY spot", f"{data['spy_spot']:,.2f}")
+cols[3].metric("Updated", datetime.now().strftime("%b %d, %Y %H:%M"))
+st.caption(source_label)
+
+for label, spot, divs, ydiv, quotes, american, rates in assets:
+    with st.spinner(f"Computing {label} surface..."):
+        repo_df, iv_df, coef_df = analyze_asset(label, spot, divs, ydiv, quotes, data["curve"], american, rates)
+
+    st.divider()
+    st.header(label)
+
+    summary_cols = st.columns(4)
+    summary_cols[0].metric("Spot", f"{spot:,.2f}")
+    summary_cols[1].metric("Model", "American" if american else "European")
+    summary_cols[2].metric("Tenors", len(repo_df))
+    summary_cols[3].metric("IV points", len(iv_df))
+
+    tab_surface, tab_smiles, tab_tables = st.tabs(["Surface", "Smiles", "Tables"])
+
+    with tab_surface:
+        st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df), use_container_width=True)
+
+    with tab_smiles:
+        st.plotly_chart(smile_figure(label, iv_df), use_container_width=True)
+
+    with tab_tables:
+        table_cols = st.columns(3)
+        with table_cols[0]:
+            st.markdown("**Repo Curve**")
+            repo_show = format_percent_table(repo_df, ["rate", "repo"])
+            st.dataframe(repo_show, use_container_width=True, hide_index=True)
+        with table_cols[1]:
+            st.markdown("**Surface Coefficients**")
+            st.dataframe(coef_df, use_container_width=True, hide_index=True)
+        with table_cols[2]:
+            st.markdown("**Implied Vols**")
+            st.dataframe(iv_df, use_container_width=True, hide_index=True)
+
+    csv = iv_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        f"Download {label} IV data",
+        csv,
+        file_name=f"{label.lower()}_implied_vols.csv",
+        mime="text/csv",
+    )
