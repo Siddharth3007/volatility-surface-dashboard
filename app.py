@@ -1,18 +1,20 @@
 import math
 import tempfile
+from io import BytesIO
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from openpyxl import Workbook
 
 import volatility_fitting_daily as vf
 
 
 SPX_DIV_YIELD = 0.0134
 SPY_DIVS = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
-DATA_FETCH_VERSION = "six-tenors-no-1w"
+DATA_FETCH_VERSION = "six-tenors-no-1w-balanced-strikes"
 
 
 st.set_page_config(
@@ -51,6 +53,103 @@ def load_excel_from_upload(uploaded_file):
         tmp.write(uploaded_file.getvalue())
         tmp_path = tmp.name
     return vf.load_xlsx(tmp_path)
+
+
+def sample_workbook_bytes():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+
+    ws["A1"] = "SPX"
+    ws["B1"] = "Spot"
+    ws["C1"] = 5667.56
+    ws["A23"] = "SPY"
+    ws["B23"] = "Spot"
+    ws["C23"] = 566.76
+
+    ws["A4"] = "Expiry"
+    ws["B4"] = "2025-04-17"
+    ws["C4"] = 0.0739726
+    ws["D3"] = 0.045
+    ws["E4"] = "Expiry"
+    ws["F4"] = "2025-06-20"
+    ws["G4"] = 0.2493151
+    ws["H3"] = 0.045
+    ws["I4"] = "Expiry"
+    ws["J4"] = "2025-12-19"
+    ws["K4"] = 0.7479452
+    ws["L3"] = 0.0435
+
+    ws["A5"] = "Strike"
+    ws["B5"] = "C"
+    ws["C5"] = "P"
+    ws["E5"] = "Strike"
+    ws["F5"] = "C"
+    ws["G5"] = "P"
+    ws["I5"] = "Strike"
+    ws["J5"] = "C"
+    ws["K5"] = "P"
+
+    ws["A25"] = "Expiry"
+    ws["B25"] = "2025-04-17"
+    ws["C25"] = 0.0739726
+    ws["D24"] = 0.045
+    ws["E25"] = "Expiry"
+    ws["F25"] = "2025-06-20"
+    ws["G25"] = 0.2493151
+    ws["H24"] = 0.045
+    ws["I25"] = "Expiry"
+    ws["J25"] = "2025-12-19"
+    ws["K25"] = 0.7479452
+    ws["L24"] = 0.0435
+
+    ws["A26"] = "Strike"
+    ws["B26"] = "C"
+    ws["C26"] = "P"
+    ws["E26"] = "Strike"
+    ws["F26"] = "C"
+    ws["G26"] = "P"
+    ws["I26"] = "Strike"
+    ws["J26"] = "C"
+    ws["K26"] = "P"
+
+    for row in range(6, 20):
+        ws.cell(row, 1).value = 5000 + 100 * (row - 6)
+        ws.cell(row, 2).value = "call_mid"
+        ws.cell(row, 3).value = "put_mid"
+        ws.cell(row, 5).value = 5000 + 100 * (row - 6)
+        ws.cell(row, 6).value = "call_mid"
+        ws.cell(row, 7).value = "put_mid"
+        ws.cell(row, 9).value = 4500 + 200 * (row - 6)
+        ws.cell(row, 10).value = "call_mid"
+        ws.cell(row, 11).value = "put_mid"
+
+    for row in range(27, 41):
+        ws.cell(row, 1).value = 500 + 10 * (row - 27)
+        ws.cell(row, 2).value = "call_mid"
+        ws.cell(row, 3).value = "put_mid"
+        ws.cell(row, 5).value = 500 + 10 * (row - 27)
+        ws.cell(row, 6).value = "call_mid"
+        ws.cell(row, 7).value = "put_mid"
+        ws.cell(row, 9).value = 450 + 20 * (row - 27)
+        ws.cell(row, 10).value = "call_mid"
+        ws.cell(row, 11).value = "put_mid"
+
+    rate_rows = [
+        (2, 1, "m", 4.36), (3, 1.5, "m", 4.33), (5, 3, "m", 4.33),
+        (7, 6, "m", 4.26), (8, 1, "y", 4.04), (9, 2, "y", 3.94),
+    ]
+    for row, mag, unit, rate in rate_rows:
+        ws.cell(row, 16).value = mag
+        ws.cell(row, 17).value = unit
+        ws.cell(row, 18).value = rate
+
+    ws["A43"] = "Template note: replace call_mid/put_mid placeholders with numeric mid prices."
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.getvalue()
 
 
 @st.cache_data(show_spinner=False)
@@ -223,6 +322,14 @@ with st.sidebar:
         st.caption("For hosting, add this as FRED_API_KEY in Streamlit secrets.")
     else:
         uploaded = st.file_uploader("Upload OptionData.xlsx", type=["xlsx"])
+        st.download_button(
+            "Download Excel template",
+            sample_workbook_bytes(),
+            file_name="OptionData_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+        st.caption("Upload mode expects the same cell layout as the original project workbook.")
 
     run_clicked = st.button("Run analysis", type="primary", use_container_width=True)
 

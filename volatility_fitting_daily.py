@@ -405,9 +405,15 @@ def load_option_quotes(ticker, spot, selected_expiries):
         chain = ticker.option_chain(expiry)
         strikes = sorted(set(chain.calls["strike"]).intersection(set(chain.puts["strike"])))
 
-        # Keep a small set of strikes near spot so the output stays readable.
-        strikes = [k for k in strikes if 0.85 * spot <= k <= 1.15 * spot]
-        strikes = sorted(strikes, key=lambda k: abs(k - spot))[:11]
+        # Center the strike sample around an approximate forward, not just spot.
+        # This keeps both OTM puts (K < F) and OTM calls (K > F) in the data.
+        forward_guess = spot * math.exp(0.04 * t)
+        strikes = [k for k in strikes if 0.80 * spot <= k <= 1.25 * spot]
+        below = [k for k in strikes if k < forward_guess]
+        above = [k for k in strikes if k >= forward_guess]
+        strikes = below[-10:] + above[:12]
+        if len(strikes) < 8:
+            strikes = sorted(strikes, key=lambda k: abs(k - forward_guess))[:21]
         strikes = sorted(strikes)
 
         calls = chain.calls.set_index("strike")
