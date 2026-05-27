@@ -1,7 +1,7 @@
 import math
 import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 import numpy as np
 from openpyxl import load_workbook
@@ -538,7 +538,6 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
         "spx_spot": spx_spot, "spy_spot": spy_spot, "curve": curve,
         "spx_quotes": spx_q, "spx_rates": spx_r,
         "spy_quotes": spy_q, "spy_rates": spy_r,
-        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
 
