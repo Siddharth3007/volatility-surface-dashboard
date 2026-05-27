@@ -406,14 +406,19 @@ def load_option_quotes(ticker, spot, selected_expiries):
         strikes = sorted(set(chain.calls["strike"]).intersection(set(chain.puts["strike"])))
 
         # Center the strike sample around an approximate forward, not just spot.
-        # This keeps both OTM puts (K < F) and OTM calls (K > F) in the data.
+        # Include a deliberate positive wing so the final repo-implied forward
+        # still has OTM calls (K > F) after repo bootstrapping.
         forward_guess = spot * math.exp(0.04 * t)
         strikes = [k for k in strikes if 0.80 * spot <= k <= 1.25 * spot]
-        below = [k for k in strikes if k < forward_guess]
-        above = [k for k in strikes if k >= forward_guess]
-        strikes = below[-10:] + above[:12]
-        if len(strikes) < 8:
-            strikes = sorted(strikes, key=lambda k: abs(k - forward_guess))[:21]
+        target_xs = [-0.08, -0.06, -0.04, -0.03, -0.02, -0.01, 0.0,
+                     0.01, 0.02, 0.03, 0.04, 0.06, 0.08, 0.10, 0.12]
+        picked = []
+        for x in target_xs:
+            target_k = forward_guess * math.exp(x)
+            nearest = min(strikes, key=lambda k: abs(k - target_k))
+            if nearest not in picked:
+                picked.append(nearest)
+        strikes = sorted(picked)
         strikes = sorted(strikes)
 
         calls = chain.calls.set_index("strike")
