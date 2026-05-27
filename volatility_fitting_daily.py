@@ -486,22 +486,46 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
 
     try:
         spx_hist = spx_ticker.history(period="5d")
-        spy_hist = spy_ticker.history(period="5d")
         spx_spot = float(spx_hist["Close"].dropna().iloc[-1])
-        spy_spot = float(spy_hist["Close"].dropna().iloc[-1])
-
-        spx_expiries = choose_expiries(spx_ticker.options, today)
-        spy_expiries = choose_expiries(spy_ticker.options, today)
-        if not spx_expiries or not spy_expiries:
-            raise RuntimeError("Could not find option expiries.")
-
-        spx_q, spx_r = load_option_quotes(spx_ticker, spx_spot, spx_expiries)
-        spy_q, spy_r = load_option_quotes(spy_ticker, spy_spot, spy_expiries)
-        curve = load_fred_curve(fred_api_key)
-        spx_r = {t: interp_rate(curve, t) for t in spx_q}
-        spy_r = {t: interp_rate(curve, t) for t in spy_q}
     except Exception as exc:
-        raise RuntimeError("Could not fetch latest option data and rates.") from exc
+        raise RuntimeError(f"Could not fetch SPX spot from yfinance: {exc}") from exc
+
+    try:
+        spy_hist = spy_ticker.history(period="5d")
+        spy_spot = float(spy_hist["Close"].dropna().iloc[-1])
+    except Exception as exc:
+        raise RuntimeError(f"Could not fetch SPY spot from yfinance: {exc}") from exc
+
+    try:
+        spx_expiries = choose_expiries(spx_ticker.options, today)
+    except Exception as exc:
+        raise RuntimeError(f"Could not fetch SPX option expiries from yfinance: {exc}") from exc
+
+    try:
+        spy_expiries = choose_expiries(spy_ticker.options, today)
+    except Exception as exc:
+        raise RuntimeError(f"Could not fetch SPY option expiries from yfinance: {exc}") from exc
+
+    if not spx_expiries or not spy_expiries:
+        raise RuntimeError("Could not find enough option expiries from yfinance.")
+
+    try:
+        spx_q, spx_r = load_option_quotes(spx_ticker, spx_spot, spx_expiries)
+    except Exception as exc:
+        raise RuntimeError(f"Could not fetch SPX option chains from yfinance: {exc}") from exc
+
+    try:
+        spy_q, spy_r = load_option_quotes(spy_ticker, spy_spot, spy_expiries)
+    except Exception as exc:
+        raise RuntimeError(f"Could not fetch SPY option chains from yfinance: {exc}") from exc
+
+    try:
+        curve = load_fred_curve(fred_api_key)
+    except Exception as exc:
+        raise RuntimeError(f"Could not fetch Treasury rates from FRED: {exc}") from exc
+
+    spx_r = {t: interp_rate(curve, t) for t in spx_q}
+    spy_r = {t: interp_rate(curve, t) for t in spy_q}
 
     print("Fetched latest available data with yfinance.")
     print(f"  SPX spot: {spx_spot:.2f}")
