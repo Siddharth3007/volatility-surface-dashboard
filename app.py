@@ -19,7 +19,7 @@ DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness"
 
 st.set_page_config(
     page_title="Volatility Surface Dashboard",
-    page_icon="",
+    page_icon="IV",
     layout="wide",
 )
 
@@ -27,13 +27,139 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .block-container { padding-top: 1.4rem; }
-    h1, h2, h3 { letter-spacing: 0; }
+    :root {
+        --bg: #070b12;
+        --panel: #0d121c;
+        --panel-2: #141b27;
+        --line: #263142;
+        --text: #e7ecf5;
+        --muted: #8b95a7;
+        --blue: #68a8ff;
+        --green: #36d16f;
+        --cyan: #41d6c3;
+        --amber: #d6a82e;
+    }
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+        background: radial-gradient(circle at 20% 0%, #101827 0%, #070b12 36%, #05070b 100%);
+        color: var(--text);
+    }
+    [data-testid="stHeader"] { background: rgba(7, 11, 18, 0); }
+    [data-testid="stSidebar"] {
+        background: #080d15;
+        border-right: 1px solid var(--line);
+    }
+    [data-testid="stSidebar"] * { color: var(--text); }
+    .block-container {
+        max-width: 1180px;
+        padding-top: 1.4rem;
+        padding-bottom: 3rem;
+    }
+    h1, h2, h3 {
+        letter-spacing: 0;
+        color: var(--text);
+    }
+    p, label, span, div { color: inherit; }
+    .app-hero {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 4px 0 18px 0;
+    }
+    .app-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 800;
+        background: linear-gradient(135deg, #5ea2ff, #8e64ff);
+        box-shadow: 0 0 30px rgba(104, 168, 255, 0.22);
+    }
+    .app-title {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--text);
+        line-height: 1.1;
+    }
+    .app-subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 0.95rem;
+    }
+    .pill {
+        display: inline-block;
+        margin-left: 10px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid #244466;
+        color: var(--blue);
+        background: rgba(104, 168, 255, 0.10);
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        vertical-align: middle;
+    }
     div[data-testid="stMetric"] {
-        border: 1px solid #e7e7e7;
+        border: 1px solid var(--line);
         border-radius: 8px;
         padding: 12px 14px;
-        background: #ffffff;
+        background: linear-gradient(180deg, #151c28, #101722);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    div[data-testid="stMetricLabel"] p {
+        color: var(--muted);
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+    }
+    div[data-testid="stMetricValue"] {
+        color: var(--text);
+        font-weight: 800;
+        font-size: 1.1rem;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stExpander"] {
+        border-color: var(--line);
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
+        color: var(--muted);
+        padding: 8px 18px;
+    }
+    .stTabs [aria-selected="true"] {
+        background: var(--panel-2);
+        color: var(--text);
+        box-shadow: 0 0 0 1px rgba(104, 168, 255, 0.15) inset;
+    }
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 8px;
+        border: 1px solid #2d7c50;
+        background: rgba(54, 209, 111, 0.14);
+        color: #8ff0b1;
+        font-weight: 700;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        border-color: var(--green);
+        background: rgba(54, 209, 111, 0.22);
+        color: #c8ffdb;
+    }
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    [data-testid="stMarkdownContainer"] p {
+        color: var(--muted);
+    }
+    hr {
+        border-color: var(--line);
     }
     </style>
     """,
@@ -264,12 +390,20 @@ def fitted_surface_figure(asset, iv_df, coef_df):
 
     fig.update_layout(
         title=f"{asset} Implied Volatility Surface",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#d8deea"},
         height=620,
         margin={"l": 0, "r": 0, "t": 50, "b": 0},
         scene={
+            "bgcolor": "rgba(0,0,0,0)",
             "xaxis_title": "log(K / F)",
             "yaxis_title": "Time to expiry",
             "zaxis_title": "IV %",
+            "xaxis": {"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
+            "yaxis": {"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
+            "zaxis": {"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
         },
     )
     return fig
@@ -289,11 +423,17 @@ def smile_figure(asset, iv_df):
 
     fig.update_layout(
         title=f"{asset} Volatility Smiles",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#0d121c",
+        font={"color": "#d8deea"},
         height=420,
         margin={"l": 0, "r": 0, "t": 50, "b": 0},
         xaxis_title="log(K / F)",
         yaxis_title="IV %",
         legend_title="Tenor",
+        xaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
+        yaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
     )
     return fig
 
@@ -306,8 +446,18 @@ def format_percent_table(df, cols):
     return out
 
 
-st.title("Volatility Surface Dashboard")
-st.caption("SPX/SPY implied volatility construction from Excel inputs or latest market data.")
+st.markdown(
+    """
+    <div class="app-hero">
+      <div class="app-mark">IV</div>
+      <div>
+        <div class="app-title">Volatility Surface Dashboard <span class="pill">Live Market Data</span></div>
+        <div class="app-subtitle">SPX/SPY implied volatility construction from Excel inputs or latest market data</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     st.header("Inputs")
