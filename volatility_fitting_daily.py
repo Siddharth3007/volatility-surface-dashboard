@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+import time
 from datetime import date, datetime
 
 import numpy as np
@@ -9,6 +10,8 @@ from openpyxl import load_workbook
 
 SQRT2PI = math.sqrt(2 * math.pi)
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
+FRED_CACHE_TTL_SECONDS = 3600
+_FRED_CURVE_CACHE = {"timestamp": 0.0, "curve": None}
 
 
 def npdf(x):
@@ -448,8 +451,16 @@ def fetch_fred_rate(series_id, api_key):
         "sort_order": "desc",
         "limit": 10,
     }
-    response = requests.get(url, params=params, timeout=20)
-    response.raise_for_status()
+    response = None
+    for attempt in range(3):
+        response = requests.get(url, params=params, timeout=20)
+        if response.status_code != 429:
+            break
+        time.sleep(1.5 * (attempt + 1))
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"FRED returned HTTP {response.status_code} for {series_id}.")
+
     observations = response.json().get("observations", [])
 
     for obs in observations:
@@ -462,6 +473,11 @@ def fetch_fred_rate(series_id, api_key):
 def load_fred_curve(api_key=FRED_API_KEY):
     if not api_key:
         raise RuntimeError("Missing FRED API key. Set FRED_API_KEY or enter it in the dashboard.")
+
+    now = time.time()
+    cached_curve = _FRED_CURVE_CACHE["curve"]
+    if cached_curve is not None and now - _FRED_CURVE_CACHE["timestamp"] < FRED_CACHE_TTL_SECONDS:
+        return list(cached_curve)
 
     # Treasury constant maturity series from FRED.
     # Rates come back in percent, so fetch_fred_rate converts them to decimals.
@@ -482,6 +498,8 @@ def load_fred_curve(api_key=FRED_API_KEY):
 
     if not curve:
         raise RuntimeError("Could not fetch Treasury rates from FRED.")
+    _FRED_CURVE_CACHE["timestamp"] = now
+    _FRED_CURVE_CACHE["curve"] = list(curve)
     return curve
 
 
