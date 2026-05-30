@@ -464,12 +464,9 @@ with st.sidebar:
     mode = st.radio("Data source", ["Fetch latest data", "Upload Excel file"])
     asset_choice = st.radio("Asset", ["SPX", "SPY", "Both"], horizontal=True)
 
-    fred_key = ""
     uploaded = None
     if mode == "Fetch latest data":
-        default_key = get_secret("FRED_API_KEY")
-        fred_key = st.text_input("FRED API key", value=default_key, type="password")
-        st.caption("For hosting, add this as FRED_API_KEY in Streamlit secrets.")
+        st.caption("Rates are pulled from FRED using the app's configured secret.")
     else:
         uploaded = st.file_uploader("Upload OptionData.xlsx", type=["xlsx"])
         st.download_button(
@@ -495,8 +492,9 @@ if not run_clicked:
 try:
     with st.spinner("Loading market data..."):
         if mode == "Fetch latest data":
+            fred_key = get_secret("FRED_API_KEY")
             if not fred_key:
-                st.error("Enter a FRED API key or add FRED_API_KEY to Streamlit secrets.")
+                st.error("Missing FRED_API_KEY in Streamlit secrets.")
                 st.stop()
             data = load_latest_cached(fred_key, DATA_FETCH_VERSION)
             source_label = "Latest available yfinance option chains + FRED Treasury curve"
