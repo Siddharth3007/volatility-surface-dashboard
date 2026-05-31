@@ -629,6 +629,7 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
             st.dataframe(repo_show, use_container_width=True, hide_index=True)
         with table_cols[1]:
             st.markdown("**Surface Coefficients**")
+            st.caption("IV(x) = a + b x + c x^2, x = log(K/F). a: ATM level, b: skew, c: curvature.")
             st.dataframe(coef_df, use_container_width=True, hide_index=True)
         with table_cols[2]:
             st.markdown("**Implied Vols**")
