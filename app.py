@@ -438,9 +438,9 @@ def smile_figure(asset, iv_df):
     return fig
 
 
-def front_month_smile_figure(asset, iv_df):
+def front_month_smile_figure(asset, iv_df, coef_df):
     fig = go.Figure()
-    if iv_df.empty:
+    if iv_df.empty or coef_df.empty:
         return fig
 
     tenor = sorted(iv_df["tenor"].unique())[0]
@@ -448,12 +448,25 @@ def front_month_smile_figure(asset, iv_df):
     fig.add_trace(go.Scatter(
         x=part["log_moneyness"],
         y=part["iv_percent"],
-        mode="markers+lines",
-        name=f"t={tenor:.3f}",
+        mode="markers",
+        name="Market IV",
         text=part["option"] + " K=" + part["strike"].round(2).astype(str),
-        line={"color": "#41d6c3", "width": 2},
         marker={"size": 7, "color": "#68a8ff"},
     ))
+
+    coef = coef_df[coef_df["tenor"] == tenor]
+    if not coef.empty:
+        row = coef.iloc[0]
+        x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
+        fitted_iv = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+        fig.add_trace(go.Scatter(
+            x=x_grid,
+            y=fitted_iv,
+            mode="lines",
+            name="Quadratic fit",
+            line={"color": "#41d6c3", "width": 3},
+        ))
+
     fig.add_vline(
         x=0,
         line_dash="dash",
@@ -471,7 +484,7 @@ def front_month_smile_figure(asset, iv_df):
         margin={"l": 0, "r": 0, "t": 50, "b": 0},
         xaxis_title="log(K / F)",
         yaxis_title="IV %",
-        showlegend=False,
+        legend={"orientation": "h", "y": 1.08, "x": 0},
         xaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
         yaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
     )
@@ -582,7 +595,7 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
         with surface_col:
             st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-surface")
         with skew_col:
-            st.plotly_chart(front_month_smile_figure(label, iv_df), use_container_width=True, key=f"{label}-front-smile")
+            st.plotly_chart(front_month_smile_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-front-smile")
 
     with tab_smiles:
         st.plotly_chart(smile_figure(label, iv_df), use_container_width=True)
