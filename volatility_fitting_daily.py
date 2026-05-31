@@ -23,7 +23,7 @@ def ncdf(x):
 
 
 def interp_rate(curve, t):
-    pts = sorted(curve)
+    pts = curve if isinstance(curve, list) and curve == sorted(curve) else sorted(curve)
     if t <= pts[0][0]:
         return pts[0][1]
     if t >= pts[-1][0]:
@@ -160,7 +160,8 @@ def iv_european(price, S, K, T, r, q, is_call):
                     else (K * math.exp(-r * T) - S * math.exp(-q * T)), 0.0)
     upper = (S * math.exp(-q * T)) if is_call else (K * math.exp(-r * T))
     if price <= intrinsic + 1e-12 or price >= upper - 1e-12:
-        return _bisect(lambda s: bs(S, K, T, r, q, s, is_call) - price, 1e-4, 5.0)
+        result = _bisect(lambda s: bs(S, K, T, r, q, s, is_call) - price, 1e-4, 5.0)
+        return None if result < 0 else result
 
     sig = 0.2
     for _ in range(60):
@@ -173,12 +174,14 @@ def iv_european(price, S, K, T, r, q, is_call):
         sig -= diff / v
         if sig <= 1e-6 or sig > 5:
             break
-    return _bisect(lambda s: bs(S, K, T, r, q, s, is_call) - price, 1e-4, 5.0)
+    result = _bisect(lambda s: bs(S, K, T, r, q, s, is_call) - price, 1e-4, 5.0)
+    return None if result < 0 else result
 
 
 def iv_american(price, S, K, T, r, q, is_call, M=120, N=120):
-    return _bisect(lambda s: american_pde(S, K, T, r, q, s, is_call, M, N) - price,
-                   1e-3, 1.5, tol=2e-4)
+    result = _bisect(lambda s: american_pde(S, K, T, r, q, s, is_call, M, N) - price,
+                     1e-3, 1.5, tol=2e-4)
+    return None if result < 0 else result
 
 
 def _bisect(f, lo, hi, tol=1e-7, max_iter=80):
@@ -218,6 +221,8 @@ def fit_repo_eu(S, curve, divs, quotes):
         P = quotes[t][K]["P"]
         F_imp = ((C - P) + K * math.exp(-r * t)) * math.exp(r * t)
         q_t = r - math.log(F_imp / S_eff) / t
+        if q_t < -0.10 or q_t > 0.30:
+            q_t = q_prev
         repo[t] = q_t
         q_prev = q_t
     return repo
@@ -248,6 +253,8 @@ def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
             ex += 1
         if flo * fhi > 0:
             q_t = lo if abs(flo) < abs(fhi) else hi
+            if q_t < -0.10 or q_t > 0.30:
+                q_t = q_prev
         else:
             for _ in range(40):
                 mid = 0.5 * (lo + hi)
@@ -260,6 +267,8 @@ def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
                 else:
                     lo, flo = mid, fm
             q_t = 0.5 * (lo + hi)
+            if q_t < -0.10 or q_t > 0.30:
+                q_t = q_prev
         repo[t] = q_t
         q_prev = q_t
     return repo
@@ -281,6 +290,8 @@ def compute_ivs(S, curve, divs, repo, quotes, american, M=120, N=120):
                     iv = iv_american(price, S_eff, K, t, r, q, is_call, M, N)
                 else:
                     iv = iv_european(price, S_eff, K, t, r, q, is_call)
+                if iv is None or iv < 0.01 or iv > 2.0:
+                    continue
                 rows.append((K, is_call, iv))
         out[t] = rows
     return out
@@ -289,7 +300,13 @@ def compute_ivs(S, curve, divs, repo, quotes, american, M=120, N=120):
 def fit_quad(xs, ys):
     A = np.column_stack([np.ones_like(xs), xs, xs * xs])
     coef, *_ = np.linalg.lstsq(A, ys, rcond=None)
-    return float(coef[0]), float(coef[1]), float(coef[2])
+    y_pred = coef[0] + coef[1] * xs + coef[2] * xs * xs
+    ss_res = float(np.sum((ys - y_pred) ** 2))
+    ss_tot = float(np.sum((ys - np.mean(ys)) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
+    rmse = float(np.sqrt(ss_res / len(ys))) if len(ys) > 0 else float("nan")
+    n_points = len(ys)
+    return float(coef[0]), float(coef[1]), float(coef[2]), r2, rmse, n_points
 
 
 def fit_surface(S, curve, divs, repo, ivs):
@@ -305,7 +322,8 @@ def fit_surface(S, curve, divs, repo, ivs):
             if otm and 0 < iv < 5:
                 xs.append(math.log(K / F))
                 ys.append(iv)
-        out[t] = fit_quad(np.array(xs), np.array(ys))
+        a, b, c, r2, rmse, n_points = fit_quad(np.array(xs), np.array(ys))
+        out[t] = {"a": a, "b": b, "c": c, "r2": r2, "rmse": rmse, "n": n_points}
     return out
 
 
@@ -370,15 +388,34 @@ def load_xlsx(path="OptionData.xlsx"):
         "spy_quotes": spy_q, "spy_rates": spy_r,
     }
 
+def option_mid(row, warn_list=None):
+    try:
+        bid = float(row.get("bid", 0.0))
+        ask = float(row.get("ask", 0.0))
+        last = float(row.get("lastPrice", 0.0))
+        volume = float(row.get("volume", 0.0))
+        open_interest = float(row.get("openInterest", 0.0))
+    except (TypeError, ValueError):
+        return None
 
-def option_mid(row):
-    bid = row.get("bid", 0.0)
-    ask = row.get("ask", 0.0)
-    last = row.get("lastPrice", 0.0)
-    if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) and bid > 0 and ask > 0:
-        return 0.5 * (float(bid) + float(ask))
-    if isinstance(last, (int, float)) and last > 0:
-        return float(last)
+    if bid <= 0 or ask <= 0:
+        if last > 0:
+            if warn_list is not None:
+                warn_list.append(row.name)
+            return last
+        return None
+
+    spread = ask - bid
+    mid = 0.5 * (bid + ask)
+
+    c1 = mid > 0 and spread / mid < 0.3
+    c2 = mid > 0.1
+    c3 = ask > bid
+    c4 = bid > 0
+    c5 = volume > 0 or open_interest > 0
+
+    if c1 and c2 and c3 and c4 and c5:
+        return mid
     return None
 
 
@@ -427,13 +464,17 @@ def load_option_quotes(ticker, spot, selected_expiries):
         calls = chain.calls.set_index("strike")
         puts = chain.puts.set_index("strike")
         quotes[t] = {}
+        stale_strikes = []
 
         for K in strikes:
-            c = option_mid(calls.loc[K])
-            p = option_mid(puts.loc[K])
+            c = option_mid(calls.loc[K], stale_strikes)
+            p = option_mid(puts.loc[K], stale_strikes)
             if c is None or p is None:
                 continue
             quotes[t][float(K)] = {"C": c, "P": p}
+
+        if stale_strikes:
+            print(f"WARNING: {len(stale_strikes)} strikes used lastPrice fallback for expiry {expiry}: {stale_strikes}")
 
         if not quotes[t]:
             raise RuntimeError(f"No usable option quotes found for {expiry}.")
@@ -498,6 +539,7 @@ def load_fred_curve(api_key=FRED_API_KEY):
 
     if not curve:
         raise RuntimeError("Could not fetch Treasury rates from FRED.")
+    curve.sort(key=lambda x: x[0])
     _FRED_CURVE_CACHE["timestamp"] = now
     _FRED_CURVE_CACHE["curve"] = list(curve)
     return curve
@@ -549,7 +591,7 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
         raise RuntimeError(f"Could not fetch SPY option chains from yfinance: {exc}") from exc
 
     try:
-        curve = load_fred_curve(fred_api_key)
+        curve = sorted(load_fred_curve(fred_api_key), key=lambda x: x[0])
     except Exception as exc:
         raise RuntimeError(f"Could not fetch Treasury rates from FRED: {exc}") from exc
 
@@ -572,7 +614,7 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
 
 def build_curve(per_tenor, fallback):
     if not per_tenor:
-        return list(fallback)
+        return sorted(fallback, key=lambda x: x[0])
     c = sorted(per_tenor.items())
     max_t = max(t for t, _ in c)
     for t, r in fallback:
@@ -614,8 +656,10 @@ def run(label, S, divs, ydiv, quotes, curve, american, per_tenor=None):
     coefs = fit_surface(S, rate_curve, div_list, repo, ivs)
     print("\nSurface coefficients  IV(x) = a + b*x + c*x^2,  x = ln(K/F):")
     for t in sorted(coefs.keys()):
-        a, b, c = coefs[t]
-        print(f"  t = {t:7.5f}   a = {a: .6f}   b = {b: .6f}   c = {c: .6f}")
+        vals = coefs[t]
+        print(f"  t = {t:7.5f}   a = {vals['a']: .6f}   b = {vals['b']: .6f}"
+              f"   c = {vals['c']: .6f}   R2 = {vals['r2']: .4f}"
+              f"   RMSE = {vals['rmse']: .4f}   n = {vals['n']}")
 
     return repo, ivs, coefs
 

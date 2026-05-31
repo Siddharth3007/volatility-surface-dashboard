@@ -326,13 +326,16 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor):
             })
 
     coef_rows = []
-    for t, (a, b, c) in sorted(coefs.items()):
+    for t, vals in sorted(coefs.items()):
         coef_rows.append({
             "asset": label,
             "tenor": t,
-            "a": a,
-            "b": b,
-            "c": c,
+            "a": round(vals["a"], 6),
+            "b": round(vals["b"], 6),
+            "c": round(vals["c"], 6),
+            "r2": round(vals["r2"], 4),
+            "rmse": round(vals["rmse"], 4),
+            "n": vals["n"],
         })
 
     return pd.DataFrame(repo_rows), pd.DataFrame(iv_rows), pd.DataFrame(coef_rows)
@@ -496,16 +499,23 @@ def front_month_smile_figure(asset, iv_df, coef_df):
         annotation_position="top",
     )
     fig.update_layout(
-        title=f"{asset} Front-Month Smile",
+        title={"text": f"{asset} Front-Month Smile", "x": 0.0, "y": 0.98},
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0d121c",
         font={"color": "#d8deea"},
         height=620,
-        margin={"l": 0, "r": 0, "t": 50, "b": 0},
+        margin={"l": 0, "r": 0, "t": 70, "b": 0},
         xaxis_title="log(K / F)",
         yaxis_title="IV %",
-        legend={"orientation": "h", "y": 1.08, "x": 0},
+        legend={
+            "orientation": "v",
+            "y": 0.98,
+            "x": 0.98,
+            "xanchor": "right",
+            "yanchor": "top",
+            "bgcolor": "rgba(13, 18, 28, 0.72)",
+        },
         xaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
         yaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
     )
@@ -593,7 +603,7 @@ cols = st.columns(4)
 cols[0].metric("Source", mode)
 cols[1].metric("SPX spot", f"{data['spx_spot']:,.2f}")
 cols[2].metric("SPY spot", f"{data['spy_spot']:,.2f}")
-cols[3].metric("Updated", datetime.now().strftime("%b %d, %Y %H:%M"))
+cols[3].metric("Updated", datetime.now().strftime("%Y-%m-%d %H:%M"))
 st.caption(source_label)
 
 for label, spot, divs, ydiv, quotes, american, rates in assets:
@@ -622,7 +632,7 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
         st.plotly_chart(smile_figure(label, iv_df, coef_df), use_container_width=True)
 
     with tab_tables:
-        table_cols = st.columns(3)
+        table_cols = st.columns([1.2, 1.2, 1.6])
         with table_cols[0]:
             st.markdown("**Repo Curve**")
             repo_show = format_percent_table(repo_df, ["rate", "repo"])
