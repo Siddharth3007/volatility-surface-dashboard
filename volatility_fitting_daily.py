@@ -12,6 +12,8 @@ SQRT2PI = math.sqrt(2 * math.pi)
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 FRED_CACHE_TTL_SECONDS = 3600
 _FRED_CURVE_CACHE = {"timestamp": 0.0, "curve": None}
+Q_MIN = -0.02
+Q_MAX = 0.12
 
 
 def npdf(x):
@@ -209,9 +211,10 @@ def closest(strikes, target):
     return min(strikes, key=lambda k: abs(k - target))
 
 
-def fit_repo_eu(S, curve, divs, quotes):
+def fit_repo_eu(S, curve, divs, quotes, ydiv=0.0):
     repo = {}
     q_prev = 0.0
+    q_fallback = ydiv if ydiv > 0 else 0.012
     for t in sorted(quotes.keys()):
         r = interp_rate(curve, t)
         S_eff = S - pv_divs(divs, t, curve)
@@ -221,19 +224,20 @@ def fit_repo_eu(S, curve, divs, quotes):
         P = quotes[t][K]["P"]
         F_imp = ((C - P) + K * math.exp(-r * t)) * math.exp(r * t)
         q_t = r - math.log(F_imp / S_eff) / t
-        if q_t < -0.10 or q_t > 0.30:
+        if q_t < Q_MIN or q_t > Q_MAX:
             q_t = q_prev
-        print(f"DIAG fit_repo_eu t={t:.4f} K={K:.2f} C={C:.4f} P={P:.4f} "
-              f"flo={float('nan'):.6f} fhi={float('nan'):.6f} q_t={q_t:.6f}")
-        print("DIAG bracket=found expansions=0")
         repo[t] = q_t
-        q_prev = q_t
+        if Q_MIN < q_t < Q_MAX:
+            q_prev = q_t
+        else:
+            q_prev = q_fallback
     return repo
 
 
-def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
+def fit_repo_am(S, curve, divs, quotes, ydiv=0.0, M=80, N=80):
     repo = {}
     q_prev = 0.0
+    q_fallback = ydiv if ydiv > 0 else 0.012
     for t in sorted(quotes.keys()):
         r = interp_rate(curve, t)
         S_eff = S - pv_divs(divs, t, curve)
@@ -246,7 +250,7 @@ def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
             return (iv_american(C, S_eff, K, t, r, qq, True, M, N)
                     - iv_american(P, S_eff, K, t, r, qq, False, M, N))
 
-        lo, hi = -0.05, 0.15
+        lo, hi = -0.02, 0.12
         flo, fhi = diff(lo), diff(hi)
         ex = 0
         while flo * fhi > 0 and ex < 6:
@@ -256,7 +260,7 @@ def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
             ex += 1
         if flo * fhi > 0:
             q_t = lo if abs(flo) < abs(fhi) else hi
-            if q_t < -0.10 or q_t > 0.30:
+            if q_t < Q_MIN or q_t > Q_MAX:
                 q_t = q_prev
         else:
             for _ in range(40):
@@ -270,13 +274,13 @@ def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
                 else:
                     lo, flo = mid, fm
             q_t = 0.5 * (lo + hi)
-            if q_t < -0.10 or q_t > 0.30:
+            if q_t < Q_MIN or q_t > Q_MAX:
                 q_t = q_prev
-        print(f"DIAG fit_repo_am t={t:.4f} K={K:.2f} C={C:.4f} P={P:.4f} "
-              f"flo={flo:.6f} fhi={fhi:.6f} q_t={q_t:.6f}")
-        print(f"DIAG bracket={'found' if flo * fhi <= 0 else 'FAILED'} expansions={ex}")
         repo[t] = q_t
-        q_prev = q_t
+        if Q_MIN < q_t < Q_MAX:
+            q_prev = q_t
+        else:
+            q_prev = q_fallback
     return repo
 
 
@@ -639,9 +643,9 @@ def run(label, S, divs, ydiv, quotes, curve, american, per_tenor=None):
     div_list = [] if ydiv > 0 else divs
 
     if american:
-        repo = fit_repo_am(S, rate_curve, div_list, quotes)
+        repo = fit_repo_am(S, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
     else:
-        repo = fit_repo_eu(S, rate_curve, div_list, quotes)
+        repo = fit_repo_eu(S, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
 
     print("\nRepo curve:")
     for t in sorted(repo.keys()):

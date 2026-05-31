@@ -289,9 +289,9 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor):
     div_list = [] if ydiv > 0 else divs
 
     if american:
-        repo = vf.fit_repo_am(spot, rate_curve, div_list, quotes)
+        repo = vf.fit_repo_am(spot, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
     else:
-        repo = vf.fit_repo_eu(spot, rate_curve, div_list, quotes)
+        repo = vf.fit_repo_eu(spot, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
 
     ivs = vf.compute_ivs(spot, rate_curve, div_list, repo, quotes, american)
     coefs = vf.fit_surface(spot, rate_curve, div_list, repo, ivs)
