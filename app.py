@@ -409,17 +409,38 @@ def fitted_surface_figure(asset, iv_df, coef_df):
     return fig
 
 
-def smile_figure(asset, iv_df):
+def smile_figure(asset, iv_df, coef_df):
     fig = go.Figure()
     for tenor in sorted(iv_df["tenor"].unique()):
         part = iv_df[iv_df["tenor"] == tenor].sort_values("log_moneyness")
         fig.add_trace(go.Scatter(
             x=part["log_moneyness"],
             y=part["iv_percent"],
-            mode="markers+lines",
-            name=f"t={tenor:.3f}",
+            mode="markers",
+            name=f"Market t={tenor:.3f}",
             text=part["option"] + " K=" + part["strike"].round(2).astype(str),
         ))
+
+        coef = coef_df[coef_df["tenor"] == tenor]
+        if not coef.empty:
+            row = coef.iloc[0]
+            x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
+            fitted_iv = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+            fig.add_trace(go.Scatter(
+                x=x_grid,
+                y=fitted_iv,
+                mode="lines",
+                name=f"Fit t={tenor:.3f}",
+                line={"width": 2},
+            ))
+
+    fig.add_vline(
+        x=0,
+        line_dash="dash",
+        line_color="#ff5b5b",
+        annotation_text="ATM forward",
+        annotation_position="top",
+    )
 
     fig.update_layout(
         title=f"{asset} Volatility Smiles",
@@ -598,7 +619,7 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
             st.plotly_chart(front_month_smile_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-front-smile")
 
     with tab_smiles:
-        st.plotly_chart(smile_figure(label, iv_df), use_container_width=True)
+        st.plotly_chart(smile_figure(label, iv_df, coef_df), use_container_width=True)
 
     with tab_tables:
         table_cols = st.columns(3)
