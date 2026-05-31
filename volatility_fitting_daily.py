@@ -247,18 +247,23 @@ def fit_repo_am(S, curve, divs, quotes, ydiv=0.0, M=80, N=80):
         P = quotes[t][K]["P"]
 
         def diff(qq):
-            return (iv_american(C, S_eff, K, t, r, qq, True, M, N)
-                    - iv_american(P, S_eff, K, t, r, qq, False, M, N))
+            call_iv = iv_american(C, S_eff, K, t, r, qq, True, M, N)
+            put_iv = iv_american(P, S_eff, K, t, r, qq, False, M, N)
+            if call_iv is None or put_iv is None:
+                return None
+            return call_iv - put_iv
 
         lo, hi = -0.02, 0.12
         flo, fhi = diff(lo), diff(hi)
         ex = 0
-        while flo * fhi > 0 and ex < 6:
+        while flo is not None and fhi is not None and flo * fhi > 0 and ex < 6:
             lo -= 0.05
             hi += 0.05
             flo, fhi = diff(lo), diff(hi)
             ex += 1
-        if flo * fhi > 0:
+        if flo is None or fhi is None:
+            q_t = q_prev
+        elif flo * fhi > 0:
             q_t = lo if abs(flo) < abs(fhi) else hi
             if q_t < Q_MIN or q_t > Q_MAX:
                 q_t = q_prev
@@ -266,6 +271,9 @@ def fit_repo_am(S, curve, divs, quotes, ydiv=0.0, M=80, N=80):
             for _ in range(40):
                 mid = 0.5 * (lo + hi)
                 fm = diff(mid)
+                if fm is None:
+                    lo = hi = q_prev
+                    break
                 if abs(fm) < 1e-4 or 0.5 * (hi - lo) < 1e-6:
                     lo = hi = mid
                     break
