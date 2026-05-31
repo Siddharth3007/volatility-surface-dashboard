@@ -223,6 +223,9 @@ def fit_repo_eu(S, curve, divs, quotes):
         q_t = r - math.log(F_imp / S_eff) / t
         if q_t < -0.10 or q_t > 0.30:
             q_t = q_prev
+        print(f"DIAG fit_repo_eu t={t:.4f} K={K:.2f} C={C:.4f} P={P:.4f} "
+              f"flo={float('nan'):.6f} fhi={float('nan'):.6f} q_t={q_t:.6f}")
+        print("DIAG bracket=found expansions=0")
         repo[t] = q_t
         q_prev = q_t
     return repo
@@ -269,6 +272,9 @@ def fit_repo_am(S, curve, divs, quotes, M=80, N=80):
             q_t = 0.5 * (lo + hi)
             if q_t < -0.10 or q_t > 0.30:
                 q_t = q_prev
+        print(f"DIAG fit_repo_am t={t:.4f} K={K:.2f} C={C:.4f} P={P:.4f} "
+              f"flo={flo:.6f} fhi={fhi:.6f} q_t={q_t:.6f}")
+        print(f"DIAG bracket={'found' if flo * fhi <= 0 else 'FAILED'} expansions={ex}")
         repo[t] = q_t
         q_prev = q_t
     return repo
