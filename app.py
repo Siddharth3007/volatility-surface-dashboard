@@ -438,6 +438,46 @@ def smile_figure(asset, iv_df):
     return fig
 
 
+def front_month_smile_figure(asset, iv_df):
+    fig = go.Figure()
+    if iv_df.empty:
+        return fig
+
+    tenor = sorted(iv_df["tenor"].unique())[0]
+    part = iv_df[iv_df["tenor"] == tenor].sort_values("log_moneyness")
+    fig.add_trace(go.Scatter(
+        x=part["log_moneyness"],
+        y=part["iv_percent"],
+        mode="markers+lines",
+        name=f"t={tenor:.3f}",
+        text=part["option"] + " K=" + part["strike"].round(2).astype(str),
+        line={"color": "#41d6c3", "width": 2},
+        marker={"size": 7, "color": "#68a8ff"},
+    ))
+    fig.add_vline(
+        x=0,
+        line_dash="dash",
+        line_color="#ff5b5b",
+        annotation_text="ATM forward",
+        annotation_position="top",
+    )
+    fig.update_layout(
+        title=f"{asset} Front-Month Smile",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#0d121c",
+        font={"color": "#d8deea"},
+        height=620,
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
+        xaxis_title="log(K / F)",
+        yaxis_title="IV %",
+        showlegend=False,
+        xaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
+        yaxis={"gridcolor": "#2a3444", "zerolinecolor": "#556174"},
+    )
+    return fig
+
+
 def format_percent_table(df, cols):
     out = df.copy()
     for col in cols:
@@ -538,7 +578,11 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
     tab_surface, tab_smiles, tab_tables = st.tabs(["Surface", "Smiles", "Tables"])
 
     with tab_surface:
-        st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df), use_container_width=True)
+        surface_col, skew_col = st.columns([2, 1])
+        with surface_col:
+            st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-surface")
+        with skew_col:
+            st.plotly_chart(front_month_smile_figure(label, iv_df), use_container_width=True, key=f"{label}-front-smile")
 
     with tab_smiles:
         st.plotly_chart(smile_figure(label, iv_df), use_container_width=True)
