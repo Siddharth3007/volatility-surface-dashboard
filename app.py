@@ -314,11 +314,13 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor):
         r = vf.interp_rate(rate_curve, t)
         forward = (spot - vf.pv_divs(div_list, t, rate_curve)) * math.exp((r - repo[t]) * t)
         for strike, is_call, iv in rows:
+            is_otm = (is_call and strike >= forward) or ((not is_call) and strike <= forward)
             iv_rows.append({
                 "asset": label,
                 "tenor": t,
                 "strike": strike,
                 "option": "Call" if is_call else "Put",
+                "is_otm": is_otm,
                 "iv": iv,
                 "iv_percent": 100 * iv,
                 "log_moneyness": math.log(strike / forward),
@@ -346,9 +348,13 @@ def fitted_surface_figure(asset, iv_df, coef_df):
     if iv_df.empty or coef_df.empty:
         return fig
 
+    plot_df = iv_df[iv_df["is_otm"]].copy()
+    if plot_df.empty:
+        return fig
+
     tenor_ranges = {}
     for tenor in sorted(coef_df["tenor"].unique()):
-        part = iv_df[iv_df["tenor"] == tenor]
+        part = plot_df[plot_df["tenor"] == tenor]
         if not part.empty:
             tenor_ranges[tenor] = (float(part["log_moneyness"].min()), float(part["log_moneyness"].max()))
 
@@ -358,8 +364,8 @@ def fitted_surface_figure(asset, iv_df, coef_df):
     # Use a broad display range, but mask each tenor outside its own observed
     # range. That avoids quadratic extrapolation spikes without collapsing the
     # surface into a skinny ribbon when one tenor has a narrower strike range.
-    x_min = max(float(iv_df["log_moneyness"].quantile(0.03)), -0.08)
-    x_max = min(float(iv_df["log_moneyness"].quantile(0.97)), 0.06)
+    x_min = max(float(plot_df["log_moneyness"].quantile(0.03)), -0.08)
+    x_max = min(float(plot_df["log_moneyness"].quantile(0.97)), 0.06)
     x_grid = np.linspace(x_min, x_max, 60)
     tenors = sorted(coef_df["tenor"].unique())
 
@@ -383,12 +389,12 @@ def fitted_surface_figure(asset, iv_df, coef_df):
     ))
 
     fig.add_trace(go.Scatter3d(
-        x=iv_df["log_moneyness"],
-        y=iv_df["tenor"],
-        z=iv_df["iv_percent"],
+        x=plot_df["log_moneyness"],
+        y=plot_df["tenor"],
+        z=plot_df["iv_percent"],
         mode="markers",
-        marker={"size": 4, "color": iv_df["iv_percent"], "colorscale": "Turbo"},
-        name="Market IV points",
+        marker={"size": 4, "color": plot_df["iv_percent"], "colorscale": "Turbo"},
+        name="OTM market IV points",
     ))
 
     fig.update_layout(
@@ -415,7 +421,9 @@ def fitted_surface_figure(asset, iv_df, coef_df):
 def smile_figure(asset, iv_df, coef_df):
     fig = go.Figure()
     for tenor in sorted(iv_df["tenor"].unique()):
-        part = iv_df[iv_df["tenor"] == tenor].sort_values("log_moneyness")
+        part = iv_df[(iv_df["tenor"] == tenor) & (iv_df["is_otm"])].sort_values("log_moneyness")
+        if part.empty:
+            continue
         fig.add_trace(go.Scatter(
             x=part["log_moneyness"],
             y=part["iv_percent"],
@@ -468,7 +476,9 @@ def front_month_smile_figure(asset, iv_df, coef_df):
         return fig
 
     tenor = sorted(iv_df["tenor"].unique())[0]
-    part = iv_df[iv_df["tenor"] == tenor].sort_values("log_moneyness")
+    part = iv_df[(iv_df["tenor"] == tenor) & (iv_df["is_otm"])].sort_values("log_moneyness")
+    if part.empty:
+        return fig
     fig.add_trace(go.Scatter(
         x=part["log_moneyness"],
         y=part["iv_percent"],
