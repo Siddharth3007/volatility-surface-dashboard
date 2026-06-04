@@ -408,19 +408,22 @@ def load_xlsx(path="OptionData.xlsx"):
 
 def option_mid(row, warn_list=None):
     try:
-        bid = float(row.get("bid", 0.0))
-        ask = float(row.get("ask", 0.0))
+        bid = float(row.get("bid", float("nan")))
+        ask = float(row.get("ask", float("nan")))
         last = float(row.get("lastPrice", 0.0))
         volume = float(row.get("volume", 0.0))
         open_interest = float(row.get("openInterest", 0.0))
     except (TypeError, ValueError):
         return None
 
-    if bid <= 0 or ask <= 0:
+    if math.isnan(bid) or math.isnan(ask):
         if last > 0:
             if warn_list is not None:
                 warn_list.append(row.name)
             return last
+        return None
+
+    if bid <= 0 or ask <= 0:
         return None
 
     spread = ask - bid
