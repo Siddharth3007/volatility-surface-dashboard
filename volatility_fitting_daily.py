@@ -182,7 +182,7 @@ def iv_european(price, S, K, T, r, q, is_call):
 
 def iv_american(price, S, K, T, r, q, is_call, M=120, N=120):
     result = _bisect(lambda s: american_pde(S, K, T, r, q, s, is_call, M, N) - price,
-                     1e-3, 1.5, tol=2e-4)
+                     1e-2, 1.5, tol=2e-4)
     return None if result < 0 else result
 
 
