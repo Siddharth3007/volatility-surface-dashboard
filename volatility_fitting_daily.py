@@ -305,10 +305,13 @@ def compute_ivs(S, curve, divs, repo, quotes, american, M=120, N=120):
                     continue
                 price = sm[K][key]
                 if american:
+                    intrinsic = max(S_eff - K, 0.0) if is_call else max(K - S_eff, 0.0)
+                    if price < intrinsic:
+                        continue
                     iv = iv_american(price, S_eff, K, t, r, q, is_call, M, N)
                 else:
                     iv = iv_european(price, S_eff, K, t, r, q, is_call)
-                if iv is None or iv < 0.01 or iv > 2.0:
+                if iv is None or iv <= 0.0101 or iv > 2.0:
                     continue
                 rows.append((K, is_call, iv))
         out[t] = rows
