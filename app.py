@@ -282,7 +282,6 @@ def load_latest_cached(fred_api_key, version):
     return vf.load_latest_data(fred_api_key)
 
 
-@st.cache_data(show_spinner=False)
 def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version):
     rate_curve = vf.build_curve(per_tenor, curve)
     div_list = [] if ydiv > 0 else divs
