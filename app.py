@@ -14,7 +14,7 @@ import volatility_fitting_daily as vf
 
 SPX_DIV_YIELD = 0.0134
 SPY_DIVS = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
-DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness-american-iv-lower-bound"
+DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness-otm-put-cache-bust"
 
 
 st.set_page_config(
@@ -284,7 +284,7 @@ def load_latest_cached(fred_api_key, version):
 
 
 @st.cache_data(show_spinner=False)
-def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor):
+def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version):
     rate_curve = vf.build_curve(per_tenor, curve)
     div_list = [] if ydiv > 0 else divs
 
@@ -618,7 +618,9 @@ st.caption(source_label)
 
 for label, spot, divs, ydiv, quotes, american, rates in assets:
     with st.spinner(f"Computing {label} surface..."):
-        repo_df, iv_df, coef_df = analyze_asset(label, spot, divs, ydiv, quotes, data["curve"], american, rates)
+        repo_df, iv_df, coef_df = analyze_asset(
+            label, spot, divs, ydiv, quotes, data["curve"], american, rates, DATA_FETCH_VERSION
+        )
 
     st.divider()
     st.header(label)
