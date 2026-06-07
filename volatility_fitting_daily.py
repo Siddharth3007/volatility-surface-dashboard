@@ -213,8 +213,8 @@ def closest(strikes, target):
 
 def fit_repo_eu(S, curve, divs, quotes, ydiv=0.0):
     repo = {}
-    q_prev = 0.0
     q_fallback = ydiv if ydiv > 0 else 0.012
+    q_prev = q_fallback
     for t in sorted(quotes.keys()):
         r = interp_rate(curve, t)
         S_eff = S - pv_divs(divs, t, curve)
@@ -236,8 +236,8 @@ def fit_repo_eu(S, curve, divs, quotes, ydiv=0.0):
 
 def fit_repo_am(S, curve, divs, quotes, ydiv=0.0, M=80, N=80):
     repo = {}
-    q_prev = 0.0
     q_fallback = ydiv if ydiv > 0 else 0.012
+    q_prev = q_fallback
     for t in sorted(quotes.keys()):
         r = interp_rate(curve, t)
         S_eff = S - pv_divs(divs, t, curve)
