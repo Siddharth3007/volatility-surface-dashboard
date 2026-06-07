@@ -278,7 +278,6 @@ def sample_workbook_bytes():
     return out.getvalue()
 
 
-@st.cache_data(show_spinner=False, ttl=300)
 def load_latest_cached(fred_api_key, version):
     return vf.load_latest_data(fred_api_key)
 
