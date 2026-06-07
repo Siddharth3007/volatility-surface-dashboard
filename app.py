@@ -14,7 +14,7 @@ import volatility_fitting_daily as vf
 
 SPX_DIV_YIELD = 0.0134
 SPY_DIVS = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
-DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness-zero-bid-filter"
+DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness-american-iv-lower-bound"
 
 
 st.set_page_config(
