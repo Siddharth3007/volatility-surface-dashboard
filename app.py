@@ -602,9 +602,12 @@ except Exception as exc:
 
 assets = []
 if asset_choice in ("SPX", "Both"):
-    assets.append(("SPX", data["spx_spot"], [], SPX_DIV_YIELD, data["spx_quotes"], False, data["spx_rates"]))
+    assets.append((
+        "SPX", data["spx_spot"], [], data.get("spx_div_yield", SPX_DIV_YIELD),
+        data["spx_quotes"], False, data["spx_rates"]
+    ))
 if asset_choice in ("SPY", "Both"):
-    assets.append(("SPY", data["spy_spot"], SPY_DIVS, 0.0, data["spy_quotes"], True, data["spy_rates"]))
+    assets.append(("SPY", data["spy_spot"], data.get("spy_divs", SPY_DIVS), 0.0, data["spy_quotes"], True, data["spy_rates"]))
 
 st.subheader("Run Summary")
 cols = st.columns(4)

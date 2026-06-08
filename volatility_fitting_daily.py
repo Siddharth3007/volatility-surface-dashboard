@@ -575,6 +575,9 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
     except ImportError as exc:
         raise RuntimeError("yfinance is not installed. Install it or use Excel mode.") from exc
 
+    fallback_spx_div_yield = 0.0134
+    fallback_spy_divs = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
+
     today = date.today()
     spx_ticker = yf.Ticker("^SPX")
     spy_ticker = yf.Ticker("SPY")
@@ -619,6 +622,17 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
     except Exception as exc:
         raise RuntimeError(f"Could not fetch Treasury rates from FRED: {exc}") from exc
 
+    spx_div_yield = fallback_spx_div_yield
+    spy_divs = fallback_spy_divs
+    try:
+        raw_divs = spy_ticker.dividends.dropna().tail(4)
+        recent_divs = [float(x) for x in raw_divs.tolist() if float(x) > 0]
+        if len(recent_divs) == 4 and spy_spot > 0:
+            spy_divs = [(0.25 * (i + 1), div) for i, div in enumerate(recent_divs)]
+            spx_div_yield = sum(recent_divs) / spy_spot
+    except Exception as exc:
+        print(f"WARNING: Could not fetch SPY dividends from yfinance; using fallback assumptions: {exc}")
+
     spx_r = {t: interp_rate(curve, t) for t in spx_q}
     spy_r = {t: interp_rate(curve, t) for t in spy_q}
 
@@ -628,11 +642,14 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
     print("  SPX expiries:", ", ".join(s for s, _ in spx_expiries))
     print("  SPY expiries:", ", ".join(s for s, _ in spy_expiries))
     print("  Treasury curve: fetched from FRED")
+    print(f"  SPX dividend yield proxy: {spx_div_yield:.4%}")
+    print("  SPY dividend assumptions:", ", ".join(f"{t:.2f}y:${d:.2f}" for t, d in spy_divs))
 
     return {
         "spx_spot": spx_spot, "spy_spot": spy_spot, "curve": curve,
         "spx_quotes": spx_q, "spx_rates": spx_r,
         "spy_quotes": spy_q, "spy_rates": spy_r,
+        "spx_div_yield": spx_div_yield, "spy_divs": spy_divs,
     }
 
 
