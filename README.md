@@ -13,9 +13,15 @@ The app can either:
 - upload an `OptionData.xlsx` file, or
 - fetch latest available SPX/SPY option chains with `yfinance` and Treasury rates from FRED.
 
+## Project documentation
+
+A detailed explanation of the data pipeline, modeling assumptions, option-chain cleaning, repo bootstrapping, IV inversion, and dashboard outputs is available here:
+
+[Project Documentation](docs/IV_Project_Final_Document.pdf)
+
 ## FRED API key
 
-For local use, you can enter the key in the sidebar.
+For local use, add the key to `.streamlit/secrets.toml`.
 
 For deployment, add this secret in Streamlit Community Cloud:
 
