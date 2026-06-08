@@ -624,12 +624,14 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
 
     spx_div_yield = fallback_spx_div_yield
     spy_divs = fallback_spy_divs
+    spy_div_yield = sum(div for _, div in fallback_spy_divs) / spy_spot if spy_spot > 0 else 0.012
     try:
         raw_divs = spy_ticker.dividends.dropna().tail(4)
         recent_divs = [float(x) for x in raw_divs.tolist() if float(x) > 0]
         if len(recent_divs) == 4 and spy_spot > 0:
             spy_divs = [(0.25 * (i + 1), div) for i, div in enumerate(recent_divs)]
-            spx_div_yield = sum(recent_divs) / spy_spot
+            spy_div_yield = sum(recent_divs) / spy_spot
+            spx_div_yield = spy_div_yield
     except Exception as exc:
         print(f"WARNING: Could not fetch SPY dividends from yfinance; using fallback assumptions: {exc}")
 
@@ -643,13 +645,15 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
     print("  SPY expiries:", ", ".join(s for s, _ in spy_expiries))
     print("  Treasury curve: fetched from FRED")
     print(f"  SPX dividend yield proxy: {spx_div_yield:.4%}")
+    print(f"  SPY carry prior: {spy_div_yield:.4%}")
     print("  SPY dividend assumptions:", ", ".join(f"{t:.2f}y:${d:.2f}" for t, d in spy_divs))
 
     return {
         "spx_spot": spx_spot, "spy_spot": spy_spot, "curve": curve,
         "spx_quotes": spx_q, "spx_rates": spx_r,
         "spy_quotes": spy_q, "spy_rates": spy_r,
-        "spx_div_yield": spx_div_yield, "spy_divs": spy_divs,
+        "spx_div_yield": spx_div_yield, "spy_div_yield": spy_div_yield,
+        "spy_divs": spy_divs,
     }
 
 
@@ -671,7 +675,7 @@ def run(label, S, divs, ydiv, quotes, curve, american, per_tenor=None):
     print("=" * 76)
 
     rate_curve = build_curve(per_tenor, curve)
-    div_list = [] if ydiv > 0 else divs
+    div_list = divs
 
     if american:
         repo = fit_repo_am(S, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
@@ -724,14 +728,15 @@ def main():
         print("  python volatility_fitting_daily.py latest")
         return None
 
-    spx_div_yield = 0.0134
-    spy_divs = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
+    spx_div_yield = data.get("spx_div_yield", 0.0134)
+    spy_divs = data.get("spy_divs", [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)])
+    spy_div_yield = data.get("spy_div_yield", sum(div for _, div in spy_divs) / data["spy_spot"])
 
     spx = run("SPX", data["spx_spot"], [], spx_div_yield,
               data["spx_quotes"], data["curve"], False,
               per_tenor=data["spx_rates"])
 
-    spy = run("SPY", data["spy_spot"], spy_divs, 0.0,
+    spy = run("SPY", data["spy_spot"], spy_divs, spy_div_yield,
               data["spy_quotes"], data["curve"], True,
               per_tenor=data["spy_rates"])
 

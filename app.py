@@ -17,6 +17,10 @@ SPY_DIVS = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
 DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness-repo-fallback-prior"
 
 
+def fallback_spy_div_yield(spot):
+    return sum(div for _, div in SPY_DIVS) / spot if spot > 0 else 0.012
+
+
 st.set_page_config(
     page_title="Volatility Surface Dashboard",
     page_icon="IV",
@@ -284,7 +288,7 @@ def load_latest_cached(fred_api_key, version):
 
 def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version):
     rate_curve = vf.build_curve(per_tenor, curve)
-    div_list = [] if ydiv > 0 else divs
+    div_list = divs
 
     if american:
         repo = vf.fit_repo_am(spot, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
@@ -607,7 +611,11 @@ if asset_choice in ("SPX", "Both"):
         data["spx_quotes"], False, data["spx_rates"]
     ))
 if asset_choice in ("SPY", "Both"):
-    assets.append(("SPY", data["spy_spot"], data.get("spy_divs", SPY_DIVS), 0.0, data["spy_quotes"], True, data["spy_rates"]))
+    assets.append((
+        "SPY", data["spy_spot"], data.get("spy_divs", SPY_DIVS),
+        data.get("spy_div_yield", fallback_spy_div_yield(data["spy_spot"])),
+        data["spy_quotes"], True, data["spy_rates"]
+    ))
 
 st.subheader("Run Summary")
 cols = st.columns(4)
