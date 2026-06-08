@@ -17,7 +17,11 @@ The app can either:
 
 A detailed explanation of the data pipeline, modeling assumptions, option-chain cleaning, repo bootstrapping, IV inversion, and dashboard outputs is available here:
 
-[Project Documentation](docs/IV_Project_Final_Document.pdf)
+[Project Documentation](docs/IV_Project_Final_Document.md)
+
+A PDF copy is also available for download:
+
+[PDF Documentation](docs/IV_Project_Final_Document.pdf)
 
 ## FRED API key
 
