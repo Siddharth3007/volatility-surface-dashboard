@@ -420,18 +420,31 @@ def fitted_surface_figure(asset, iv_df, coef_df):
     return fig
 
 
+def tenor_label(tenor):
+    days = tenor * 365
+    if days < 75:
+        return f"{days / 7:.1f} weeks"
+    if days < 330:
+        return f"{days / 30:.1f} months"
+    return f"{tenor:.1f} year"
+
+
 def smile_figure(asset, iv_df, coef_df):
     fig = go.Figure()
-    for tenor in sorted(iv_df["tenor"].unique()):
+    palette = ["#68a8ff", "#f26b5b", "#16d0a5", "#a76cff", "#ffb347", "#28d7f5", "#f472b6", "#a3e16d"]
+    for idx, tenor in enumerate(sorted(iv_df["tenor"].unique())):
         part = iv_df[(iv_df["tenor"] == tenor) & (iv_df["is_otm"])].sort_values("log_moneyness")
         if part.empty:
             continue
+        color = palette[idx % len(palette)]
+        label = tenor_label(tenor)
         fig.add_trace(go.Scatter(
             x=part["log_moneyness"],
             y=part["iv_percent"],
             mode="markers",
-            name=f"Market t={tenor:.3f}",
+            name=f"Market {label}",
             text=part["option"] + " K=" + part["strike"].round(2).astype(str),
+            marker={"color": color, "size": 7},
         ))
 
         coef = coef_df[coef_df["tenor"] == tenor]
@@ -439,12 +452,13 @@ def smile_figure(asset, iv_df, coef_df):
             row = coef.iloc[0]
             x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
             fitted_iv = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+            fit_label = f"Fit {label} (R²={row['r2']:.2f})"
             fig.add_trace(go.Scatter(
                 x=x_grid,
                 y=fitted_iv,
                 mode="lines",
-                name=f"Fit t={tenor:.3f}",
-                line={"width": 2},
+                name=fit_label,
+                line={"width": 2, "color": color},
             ))
 
     fig.add_vline(
@@ -477,7 +491,7 @@ def front_month_smile_figure(asset, iv_df, coef_df):
     if iv_df.empty or coef_df.empty:
         return fig
 
-    tenor = sorted(iv_df["tenor"].unique())[0]
+    tenor = min(sorted(iv_df["tenor"].unique()), key=lambda t: abs(t - 30 / 365))
     part = iv_df[(iv_df["tenor"] == tenor) & (iv_df["is_otm"])].sort_values("log_moneyness")
     if part.empty:
         return fig
@@ -499,7 +513,7 @@ def front_month_smile_figure(asset, iv_df, coef_df):
             x=x_grid,
             y=fitted_iv,
             mode="lines",
-            name="Quadratic fit",
+            name=f"Quadratic fit (R²={row['r2']:.2f})",
             line={"color": "#41d6c3", "width": 3},
         ))
 
@@ -511,7 +525,7 @@ def front_month_smile_figure(asset, iv_df, coef_df):
         annotation_position="top",
     )
     fig.update_layout(
-        title={"text": f"{asset} Front-Month Smile", "x": 0.0, "y": 0.98},
+        title={"text": f"{asset} Front-Month Smile ({tenor_label(tenor)})", "x": 0.0, "y": 0.98},
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="#0d121c",
@@ -639,6 +653,8 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
     summary_cols[1].metric("Model", "American" if american else "European")
     summary_cols[2].metric("Tenors", len(repo_df))
     summary_cols[3].metric("IV points", len(iv_df))
+    if label == "SPY":
+        st.caption("Note: short-tenor SPY repo can be unstable because it is bootstrapped from limited/noisy ATM American option pairs. See the documentation Limitations section.")
 
     tab_surface, tab_smiles, tab_tables = st.tabs(["Surface", "Smiles", "Tables"])
 
@@ -647,9 +663,11 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
         with surface_col:
             st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-surface")
         with skew_col:
+            st.caption("Front month is displayed as the listed tenor closest to 30 calendar days.")
             st.plotly_chart(front_month_smile_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-front-smile")
 
     with tab_smiles:
+        st.caption("Tenor labels are shown in calendar weeks, months, or years. Fit legend entries include R² as a quick fit-quality indicator.")
         st.plotly_chart(smile_figure(label, iv_df, coef_df), use_container_width=True)
 
     with tab_tables:
