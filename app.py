@@ -2,6 +2,7 @@ import math
 import tempfile
 from io import BytesIO
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -636,7 +637,8 @@ cols = st.columns(4)
 cols[0].metric("Source", mode)
 cols[1].metric("SPX spot", f"{data['spx_spot']:,.2f}")
 cols[2].metric("SPY spot", f"{data['spy_spot']:,.2f}")
-cols[3].metric("Updated", datetime.now().strftime("%Y-%m-%d %H:%M"))
+run_time_et = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z")
+cols[3].metric("Run time (ET)", run_time_et)
 st.caption(source_label)
 
 for label, spot, divs, ydiv, quotes, american, rates in assets:
