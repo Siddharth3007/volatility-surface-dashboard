@@ -621,16 +621,26 @@ except Exception as exc:
 
 assets = []
 if asset_choice in ("SPX", "Both"):
-    assets.append((
-        "SPX", data["spx_spot"], [], data.get("spx_div_yield", SPX_DIV_YIELD),
-        data["spx_quotes"], False, data["spx_rates"]
-    ))
+    if data.get("spx_quotes"):
+        assets.append((
+            "SPX", data["spx_spot"], [], data.get("spx_div_yield", SPX_DIV_YIELD),
+            data["spx_quotes"], False, data["spx_rates"]
+        ))
+    else:
+        st.warning("SPX option chains are temporarily unavailable from yfinance.")
 if asset_choice in ("SPY", "Both"):
-    assets.append((
-        "SPY", data["spy_spot"], data.get("spy_divs", SPY_DIVS),
-        data.get("spy_div_yield", fallback_spy_div_yield(data["spy_spot"])),
-        data["spy_quotes"], True, data["spy_rates"]
-    ))
+    if data.get("spy_quotes"):
+        assets.append((
+            "SPY", data["spy_spot"], data.get("spy_divs", SPY_DIVS),
+            data.get("spy_div_yield", fallback_spy_div_yield(data["spy_spot"])),
+            data["spy_quotes"], True, data["spy_rates"]
+        ))
+    else:
+        st.warning("SPY option chains are temporarily unavailable from yfinance.")
+
+if not assets:
+    st.error("No usable option quotes are available for the selected asset.")
+    st.stop()
 
 st.subheader("Run Summary")
 cols = st.columns(4)
@@ -640,6 +650,8 @@ cols[2].metric("SPY spot", f"{data['spy_spot']:,.2f}")
 run_time_et = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z")
 cols[3].metric("Run time (ET)", run_time_et)
 st.caption(source_label)
+for warning in data.get("warnings", []):
+    st.warning(warning)
 
 for label, spot, divs, ydiv, quotes, american, rates in assets:
     with st.spinner(f"Computing {label} surface..."):

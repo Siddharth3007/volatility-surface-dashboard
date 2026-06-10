@@ -465,6 +465,7 @@ def choose_expiries(expiry_strings, today):
 
 def load_option_quotes(ticker, spot, selected_expiries):
     quotes, rates = {}, {}
+    skipped = []
     for expiry, t in selected_expiries:
         chain = ticker.option_chain(expiry)
         strikes = sorted(set(chain.calls["strike"]).intersection(set(chain.puts["strike"])))
@@ -501,7 +502,14 @@ def load_option_quotes(ticker, spot, selected_expiries):
             print(f"WARNING: {len(stale_strikes)} strikes used lastPrice fallback for expiry {expiry}: {stale_strikes}")
 
         if not quotes[t]:
-            raise RuntimeError(f"No usable option quotes found for {expiry}.")
+            skipped.append(expiry)
+            del quotes[t]
+
+    if skipped:
+        print(f"WARNING: skipped expiries with no usable option quotes: {skipped}")
+
+    if not quotes:
+        raise RuntimeError("No usable option quotes found for any selected expiry.")
     return quotes, rates
 
 
@@ -607,15 +615,21 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
     if not spx_expiries or not spy_expiries:
         raise RuntimeError("Could not find enough option expiries from yfinance.")
 
+    warnings = []
     try:
         spx_q, spx_r = load_option_quotes(spx_ticker, spx_spot, spx_expiries)
     except Exception as exc:
-        raise RuntimeError(f"Could not fetch SPX option chains from yfinance: {exc}") from exc
+        spx_q, spx_r = {}, {}
+        warnings.append(f"Could not fetch usable SPX option chains from yfinance: {exc}")
 
     try:
         spy_q, spy_r = load_option_quotes(spy_ticker, spy_spot, spy_expiries)
     except Exception as exc:
-        raise RuntimeError(f"Could not fetch SPY option chains from yfinance: {exc}") from exc
+        spy_q, spy_r = {}, {}
+        warnings.append(f"Could not fetch usable SPY option chains from yfinance: {exc}")
+
+    if not spx_q and not spy_q:
+        raise RuntimeError("Could not fetch usable SPX or SPY option chains from yfinance.")
 
     try:
         curve = sorted(load_fred_curve(fred_api_key), key=lambda x: x[0])
@@ -654,6 +668,7 @@ def load_latest_data(fred_api_key=FRED_API_KEY):
         "spy_quotes": spy_q, "spy_rates": spy_r,
         "spx_div_yield": spx_div_yield, "spy_div_yield": spy_div_yield,
         "spy_divs": spy_divs,
+        "warnings": warnings,
     }
 
 
