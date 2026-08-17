@@ -5,3 +5,4 @@ numpy
 openpyxl
 yfinance
 requests
+scipy

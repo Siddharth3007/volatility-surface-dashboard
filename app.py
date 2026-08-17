@@ -15,7 +15,7 @@ import volatility_fitting_daily as vf
 
 SPX_DIV_YIELD = 0.0134
 SPY_DIVS = [(0.25, 1.90), (0.50, 2.10), (0.75, 1.90), (1.00, 1.92)]
-DATA_FETCH_VERSION = "six-tenors-no-1w-target-moneyness-repo-fallback-prior"
+DATA_FETCH_VERSION = "svi-fit-mode"
 
 
 def fallback_spy_div_yield(spot):
@@ -298,6 +298,7 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, v
 
     ivs = vf.compute_ivs(spot, rate_curve, div_list, repo, quotes, american)
     coefs = vf.fit_surface(spot, rate_curve, div_list, repo, ivs)
+    svi_coefs = vf.fit_surface_svi(spot, rate_curve, div_list, repo, ivs)
 
     repo_rows = []
     for t in sorted(repo):
@@ -343,10 +344,38 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, v
             "n": vals["n"],
         })
 
-    return pd.DataFrame(repo_rows), pd.DataFrame(iv_rows), pd.DataFrame(coef_rows)
+    svi_coef_rows = []
+    for t, vals in sorted(svi_coefs.items()):
+        svi_coef_rows.append({
+            "asset": label,
+            "tenor": t,
+            "a": round(vals["a"], 6),
+            "b": round(vals["b"], 6),
+            "rho": round(vals["rho"], 6),
+            "m": round(vals["m"], 6),
+            "sigma": round(vals["sigma"], 6),
+            "rmse": round(vals["rmse"], 6),
+            "n": vals["n"],
+            "calendar_violations": vals.get("calendar_violations", 0),
+        })
+
+    return (
+        pd.DataFrame(repo_rows),
+        pd.DataFrame(iv_rows),
+        pd.DataFrame(coef_rows),
+        pd.DataFrame(svi_coef_rows),
+    )
 
 
-def fitted_surface_figure(asset, iv_df, coef_df):
+def fitted_iv_from_row(row, x_grid, fit_model, tenor):
+    if fit_model == "SVI":
+        params = [row["a"], row["b"], row["rho"], row["m"], row["sigma"]]
+        total_var = vf.svi_total_variance(x_grid, params)
+        return 100 * np.sqrt(np.maximum(total_var / tenor, 0))
+    return 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+
+
+def fitted_surface_figure(asset, iv_df, coef_df, fit_model):
     fig = go.Figure()
     if iv_df.empty or coef_df.empty:
         return fig
@@ -375,7 +404,7 @@ def fitted_surface_figure(asset, iv_df, coef_df):
     z_rows = []
     for tenor in tenors:
         row = coef_df.loc[coef_df["tenor"] == tenor].iloc[0]
-        fitted = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+        fitted = fitted_iv_from_row(row, x_grid, fit_model, tenor)
         lo, hi = tenor_ranges[tenor]
         fitted = np.where((x_grid >= lo) & (x_grid <= hi), fitted, np.nan)
         z_rows.append(np.clip(fitted, 5, 35))
@@ -430,7 +459,7 @@ def tenor_label(tenor):
     return f"{tenor:.1f} year"
 
 
-def smile_figure(asset, iv_df, coef_df):
+def smile_figure(asset, iv_df, coef_df, fit_model):
     fig = go.Figure()
     palette = ["#68a8ff", "#f26b5b", "#16d0a5", "#a76cff", "#ffb347", "#28d7f5", "#f472b6", "#a3e16d"]
     for idx, tenor in enumerate(sorted(iv_df["tenor"].unique())):
@@ -452,8 +481,11 @@ def smile_figure(asset, iv_df, coef_df):
         if not coef.empty:
             row = coef.iloc[0]
             x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
-            fitted_iv = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
-            fit_label = f"Fit {label} (R²={row['r2']:.2f})"
+            fitted_iv = fitted_iv_from_row(row, x_grid, fit_model, tenor)
+            if fit_model == "SVI":
+                fit_label = f"SVI {label} (RMSE={row['rmse']:.4f})"
+            else:
+                fit_label = f"Fit {label} (R²={row['r2']:.2f})"
             fig.add_trace(go.Scatter(
                 x=x_grid,
                 y=fitted_iv,
@@ -487,12 +519,15 @@ def smile_figure(asset, iv_df, coef_df):
     return fig
 
 
-def front_month_smile_figure(asset, iv_df, coef_df):
+def front_month_smile_figure(asset, iv_df, coef_df, fit_model):
     fig = go.Figure()
     if iv_df.empty or coef_df.empty:
         return fig
 
-    tenor = min(sorted(iv_df["tenor"].unique()), key=lambda t: abs(t - 30 / 365))
+    available_tenors = sorted(set(iv_df["tenor"].unique()).intersection(set(coef_df["tenor"].unique())))
+    if not available_tenors:
+        return fig
+    tenor = min(available_tenors, key=lambda t: abs(t - 30 / 365))
     part = iv_df[(iv_df["tenor"] == tenor) & (iv_df["is_otm"])].sort_values("log_moneyness")
     if part.empty:
         return fig
@@ -509,12 +544,16 @@ def front_month_smile_figure(asset, iv_df, coef_df):
     if not coef.empty:
         row = coef.iloc[0]
         x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
-        fitted_iv = 100 * (row["a"] + row["b"] * x_grid + row["c"] * x_grid * x_grid)
+        fitted_iv = fitted_iv_from_row(row, x_grid, fit_model, tenor)
+        if fit_model == "SVI":
+            fit_name = f"SVI fit (RMSE={row['rmse']:.4f})"
+        else:
+            fit_name = f"Quadratic fit (R²={row['r2']:.2f})"
         fig.add_trace(go.Scatter(
             x=x_grid,
             y=fitted_iv,
             mode="lines",
-            name=f"Quadratic fit (R²={row['r2']:.2f})",
+            name=fit_name,
             line={"color": "#41d6c3", "width": 3},
         ))
 
@@ -574,6 +613,7 @@ with st.sidebar:
     st.header("Inputs")
     mode = st.radio("Data source", ["Fetch latest data", "Upload Excel file"])
     asset_choice = st.radio("Asset", ["SPX", "SPY", "Both"], horizontal=True)
+    fit_model = st.radio("Surface fit", ["Quadratic", "SVI"], horizontal=True)
 
     uploaded = None
     if mode == "Fetch latest data":
@@ -593,7 +633,7 @@ with st.sidebar:
 
 st.markdown(
     "This dashboard fits a repo curve, computes implied volatilities, filters option data by moneyness, "
-    "and visualizes the fitted quadratic surface."
+    "and visualizes the fitted quadratic or SVI surface."
 )
 
 if not run_clicked:
@@ -655,9 +695,14 @@ for warning in data.get("warnings", []):
 
 for label, spot, divs, ydiv, quotes, american, rates in assets:
     with st.spinner(f"Computing {label} surface..."):
-        repo_df, iv_df, coef_df = analyze_asset(
+        repo_df, iv_df, quad_coef_df, svi_coef_df = analyze_asset(
             label, spot, divs, ydiv, quotes, data["curve"], american, rates, DATA_FETCH_VERSION
         )
+        coef_df = svi_coef_df if fit_model == "SVI" else quad_coef_df
+
+    if coef_df.empty:
+        st.warning(f"{fit_model} fit could not be calibrated for {label} with the current cleaned quotes.")
+        continue
 
     st.divider()
     st.header(label)
@@ -675,14 +720,17 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
     with tab_surface:
         surface_col, skew_col = st.columns([2, 1])
         with surface_col:
-            st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-surface")
+            st.plotly_chart(fitted_surface_figure(label, iv_df, coef_df, fit_model), use_container_width=True, key=f"{label}-surface-{fit_model}")
         with skew_col:
             st.caption("Front month is displayed as the listed tenor closest to 30 calendar days.")
-            st.plotly_chart(front_month_smile_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-front-smile")
+            st.plotly_chart(front_month_smile_figure(label, iv_df, coef_df, fit_model), use_container_width=True, key=f"{label}-front-smile-{fit_model}")
 
     with tab_smiles:
-        st.caption("Tenor labels are shown in calendar weeks, months, or years. Fit legend entries include R² as a quick fit-quality indicator.")
-        st.plotly_chart(smile_figure(label, iv_df, coef_df), use_container_width=True)
+        if fit_model == "SVI":
+            st.caption("Tenor labels are shown in calendar weeks, months, or years. SVI fits show RMSE and use total variance with butterfly/calendar diagnostics.")
+        else:
+            st.caption("Tenor labels are shown in calendar weeks, months, or years. Fit legend entries include R² as a quick fit-quality indicator.")
+        st.plotly_chart(smile_figure(label, iv_df, coef_df, fit_model), use_container_width=True)
 
     with tab_tables:
         table_cols = st.columns([1.2, 1.2, 1.6])
@@ -693,7 +741,10 @@ for label, spot, divs, ydiv, quotes, american, rates in assets:
         with table_cols[1]:
             st.markdown("**Surface Coefficients**")
             st.dataframe(coef_df, use_container_width=True, hide_index=True)
-            st.caption("IV(x) = a + b x + c x^2, x = log(K/F). a: ATM level, b: skew, c: curvature.")
+            if fit_model == "SVI":
+                st.caption("Raw SVI fits total variance w(x) = a + b[rho(x-m) + sqrt((x-m)^2 + sigma^2)].")
+            else:
+                st.caption("IV(x) = a + b x + c x^2, x = log(K/F). a: ATM level, b: skew, c: curvature.")
         with table_cols[2]:
             st.markdown("**Implied Vols**")
             st.dataframe(iv_df, use_container_width=True, hide_index=True)

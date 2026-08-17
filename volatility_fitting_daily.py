@@ -7,6 +7,8 @@ from datetime import date, datetime
 import numpy as np
 from openpyxl import load_workbook
 
+import svi
+
 
 SQRT2PI = math.sqrt(2 * math.pi)
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
@@ -345,6 +347,56 @@ def fit_surface(S, curve, divs, repo, ivs):
                 ys.append(iv)
         a, b, c, r2, rmse, n_points = fit_quad(np.array(xs), np.array(ys))
         out[t] = {"a": a, "b": b, "c": c, "r2": r2, "rmse": rmse, "n": n_points}
+    return out
+
+
+def svi_total_variance(x, params):
+    a, b, rho, m, sigma = params
+    return a + b * (rho * (x - m) + np.sqrt((x - m) ** 2 + sigma ** 2))
+
+
+def fit_surface_svi(S, curve, divs, repo, ivs):
+    out = {}
+    params_by_tenor = []
+    fitted_tenors = []
+    for t, rows in sorted(ivs.items()):
+        r = interp_rate(curve, t)
+        q = repo[t]
+        S_eff = S - pv_divs(divs, t, curve)
+        F = S_eff * math.exp((r - q) * t)
+        xs, ys = [], []
+        for K, is_call, iv in rows:
+            otm = (is_call and K > F) or ((not is_call) and K < F)
+            if otm and 0 < iv < 5:
+                xs.append(math.log(K / F))
+                ys.append(iv)
+        if len(xs) < 8:
+            continue
+        try:
+            params, rmse = svi.fit_svi(np.array(xs), np.array(ys), t)
+        except Exception as exc:
+            print(f"WARNING: SVI calibration skipped for tenor {t:.6f}: {exc}")
+            continue
+        a, b, rho, m, sigma = params
+        out[t] = {
+            "a": float(a), "b": float(b), "rho": float(rho), "m": float(m),
+            "sigma": float(sigma), "rmse": float(rmse), "n": len(ys),
+        }
+        fitted_tenors.append(t)
+        params_by_tenor.append(params)
+
+    if len(params_by_tenor) >= 2:
+        violations = svi.calendar_arb_check(params_by_tenor, fitted_tenors)
+        violation_counts = {}
+        for t1, t2, _ in violations:
+            violation_counts[(t1, t2)] = violation_counts.get((t1, t2), 0) + 1
+        for t, vals in out.items():
+            vals["calendar_violations"] = sum(
+                count for (t1, t2), count in violation_counts.items() if t in (t1, t2)
+            )
+    else:
+        for vals in out.values():
+            vals["calendar_violations"] = 0
     return out
 
 
