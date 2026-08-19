@@ -23,6 +23,13 @@ A PDF copy is also available for download:
 
 [PDF Documentation](docs/IV_Project_Final_Document.pdf)
 
+## Credits and references
+
+- Finite Difference Methods (Explicit, Implicit and Crank-Nicolson): [https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com](https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com)
+- IV and Vol Surfaces: [https://www.youtube.com/watch?v=F_qh827iXFQ](https://www.youtube.com/watch?v=F_qh827iXFQ)
+- SVI: [https://sellersgaard.github.io/blog/2023/svi/](https://sellersgaard.github.io/blog/2023/svi/)
+- SciPy documentation for SLSQP: [https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html)
+
 ## FRED API key
 
 For local use, add the key to `.streamlit/secrets.toml`.

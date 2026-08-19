@@ -2,7 +2,7 @@
 
 ## 1. Project Objective
 
-The objective of this project is to construct, plot, and visualize the SPX/SPY implied volatility surface using live option-chain data, Treasury rates, dividend assumptions, repo bootstrapping, implied volatility inversion, and quadratic smile fitting.
+The objective of this project is to construct, plot, and visualize the SPX/SPY implied volatility surface using live option-chain data, Treasury rates, dividend assumptions, repo bootstrapping, implied volatility inversion, quadratic smile fitting, and SVI fitting.
 
 ## 2. Inputs and Data Sources
 
@@ -21,7 +21,7 @@ The objective of this project is to construct, plot, and visualize the SPX/SPY i
 - SPY dividends are modeled as discrete cash dividends.
 - The risk-free curve is interpolated linearly.
 - OTM options are used for visualization.
-- A quadratic smile is fit tenor-by-tenor.
+- A quadratic smile or SVI smile is fit tenor-by-tenor.
 
 ## 4. Implementation Walkthrough
 
@@ -136,7 +136,11 @@ For American options, we use bisection to find the root of `pricer(sigma) - pric
 V = max(payoff, continuation value)
 ```
 
-### Step 7: Fit Quadratic Polynomial
+### Step 7: Fit the Volatility Smile
+
+The dashboard supports three fitting modes.
+
+#### Quadratic Fit
 
 We fit a quadratic polynomial to model IV versus log-moneyness and obtain coefficients `a`, `b`, and `c`:
 
@@ -148,9 +152,27 @@ IV(x) = a + b*x + c*x^2, where x = log(K/F)
 - `b` = skew
 - `c` = curvature
 
+#### SVI Single Start
+
+SVI single start fits Gatheral's raw SVI parameterization to observed IVs in total variance space. It uses one informed warm start for SLSQP.
+
+```text
+w(x) = a + b * [rho * (x - m) + sqrt((x - m)^2 + sigma^2)]
+```
+
+Here `w(x)` is total implied variance and `x = log(K/F)`.
+
+#### SVI Multi-Start
+
+SVI multi-start fits Gatheral's raw SVI parameterization using multiple warm starts in different regions of the parameter space. Among feasible fits, the dashboard chooses the one with the lowest RMSE. In testing, the multi-start version generally reduced RMSE by around 50-60% compared with the single-start SLSQP version.
+
+The SVI modes also include no-arbitrage style checks such as positive total variance, calendar constraints across tenors, and risk-neutral-density based validation.
+
 ### Step 8: Visualization and Dashboard Output
 
-Finally, we display the fitted repo curve, implied volatility table, quadratic surface coefficients, volatility smiles across tenors, and the 3D implied volatility surface. The plotted smiles and surfaces use OTM options only, so the visualization focuses on the most liquid and commonly quoted side of the volatility surface.
+Finally, we display the fitted repo curve, implied volatility table, surface coefficients, volatility smiles across tenors, and the 3D implied volatility surface. The plotted smiles and surfaces use OTM options only, so the visualization focuses on the most liquid and commonly quoted side of the volatility surface.
+
+When an SVI mode is selected, the dashboard also displays SVI-implied risk-neutral density plots, including a multi-tenor overlay and a front-month comparison against a lognormal density.
 
 ## 5. Dashboard Features
 
@@ -159,6 +181,7 @@ Finally, we display the fitted repo curve, implied volatility table, quadratic s
 - View SPX/SPY surfaces
 - View smiles across tenors
 - View front-month smile
+- View SVI-implied risk-neutral densities
 - Download IV data
 - Inspect repo curve, IV table, and coefficients
 
@@ -166,7 +189,8 @@ Finally, we display the fitted repo curve, implied volatility table, quadratic s
 
 - `a` = ATM volatility level
 - `b` = skew
-- `c` = curvature
+- `c` = curvature for the quadratic fit
+- For SVI, `a`, `b`, `rho`, `m`, and `sigma` define the raw SVI total variance curve
 - Higher left-wing IV means downside protection is more expensive
 - Repo curve instability can signal noisy short-tenor data
 - Spikes can come from short-dated OTM put skew
@@ -175,15 +199,14 @@ Finally, we display the fitted repo curve, implied volatility table, quadratic s
 
 - Yahoo Finance data may be delayed or stale
 - Bid/ask quality varies
-- The quadratic fit is simple and not arbitrage-free; this version does not perform arbitrage checks
-- No SVI/SABR smoothing yet
+- The quadratic fit is simple and not arbitrage-free
+- SVI improves the fitting framework, but the dashboard is still not a production-grade volatility surface engine
 - Repo bootstrapping can be unstable for short tenors
 - This is not intended for trading or risk decisions
 
 ## 8. Future Improvements
 
-- SVI fitting
-- Static arbitrage checks
+- More robust static arbitrage checks
 - Calendar/butterfly violation flags
 - Better dividend curve
 - More robust quote cleaning
@@ -197,3 +220,9 @@ Finally, we display the fitted repo curve, implied volatility table, quadratic s
 - Uses free data sources
 - Public dashboard link / GitHub repository
 
+## 10. Credits and References
+
+- Finite Difference Methods (Explicit, Implicit and Crank-Nicolson): [https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com](https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com)
+- IV and Vol Surfaces: [https://www.youtube.com/watch?v=F_qh827iXFQ](https://www.youtube.com/watch?v=F_qh827iXFQ)
+- SVI: [https://sellersgaard.github.io/blog/2023/svi/](https://sellersgaard.github.io/blog/2023/svi/)
+- SciPy documentation for SLSQP: [https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-slsqp.html)

@@ -723,7 +723,16 @@ with st.sidebar:
     st.header("Inputs")
     mode = st.radio("Data source", ["Fetch latest data", "Upload Excel file"])
     asset_choice = st.radio("Asset", ["SPX", "SPY", "Both"], horizontal=True)
-    fit_model = st.radio("Surface fit", ["Quadratic Fit", "SVI (single start)", "SVI (multi-start)"])
+    fit_model = st.radio(
+        "Surface fit",
+        ["Quadratic Fit", "SVI (single start)", "SVI (multi-start)"],
+        help=(
+            "Quadratic Fit: Fits a quadratic function to the IVs by using least square fitting.\n\n"
+            "SVI single start: Fits Gatheral's raw SVI to observed IVs. Uses one informed warm start for SLSQP.\n\n"
+            "SVI Multi-start: Fits Gatheral's raw SVI to observed IVs. Runs warm starts in different regions, "
+            "and finds the one with the best fit. Generally reduced RMSE by ~50-60%."
+        ),
+    )
 
     uploaded = None
     if mode == "Fetch latest data":
