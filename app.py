@@ -295,7 +295,7 @@ def svi_mode_key(fit_model):
     return "single-start" if "single" in fit_model.lower() else "multi-start"
 
 
-def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version, fit_model):
+def compute_asset_base(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version):
     rate_curve = vf.build_curve(per_tenor, curve)
     div_list = divs
 
@@ -305,11 +305,6 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, v
         repo = vf.fit_repo_eu(spot, rate_curve, div_list, quotes, ydiv=ydiv if ydiv > 0 else 0.012)
 
     ivs = vf.compute_ivs(spot, rate_curve, div_list, repo, quotes, american)
-    coefs = vf.fit_surface(spot, rate_curve, div_list, repo, ivs)
-    svi_coefs = {}
-    if is_svi_mode(fit_model):
-        svi_coefs = vf.fit_surface_svi(spot, rate_curve, div_list, repo, ivs, mode=svi_mode_key(fit_model))
-
     repo_rows = []
     for t in sorted(repo):
         r = vf.interp_rate(rate_curve, t)
@@ -341,41 +336,63 @@ def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, v
                 "forward": forward,
             })
 
+    return {
+        "rate_curve": rate_curve,
+        "div_list": div_list,
+        "repo": repo,
+        "ivs": ivs,
+        "repo_df": pd.DataFrame(repo_rows),
+        "iv_df": pd.DataFrame(iv_rows),
+    }
+
+
+def fit_asset_from_base(label, spot, base, fit_model):
+    rate_curve = base["rate_curve"]
+    div_list = base["div_list"]
+    repo = base["repo"]
+    ivs = base["ivs"]
+
+    if is_svi_mode(fit_model):
+        coefs = vf.fit_surface_svi(spot, rate_curve, div_list, repo, ivs, mode=svi_mode_key(fit_model))
+    else:
+        coefs = vf.fit_surface(spot, rate_curve, div_list, repo, ivs)
+
     coef_rows = []
-    for t, vals in sorted(coefs.items()):
-        coef_rows.append({
-            "asset": label,
-            "tenor": t,
-            "a": round(vals["a"], 6),
-            "b": round(vals["b"], 6),
-            "c": round(vals["c"], 6),
-            "r2": round(vals["r2"], 4),
-            "rmse": round(vals["rmse"], 4),
-            "n": vals["n"],
-        })
+    if is_svi_mode(fit_model):
+        for t, vals in sorted(coefs.items()):
+            coef_rows.append({
+                "asset": label,
+                "tenor": t,
+                "a": round(vals["a"], 6),
+                "b": round(vals["b"], 6),
+                "rho": round(vals["rho"], 6),
+                "m": round(vals["m"], 6),
+                "sigma": round(vals["sigma"], 6),
+                "rmse": round(vals["rmse"], 6),
+                "n": vals["n"],
+                "forward": vals.get("forward", float("nan")),
+                "calendar_violations": vals.get("calendar_violations", 0),
+            })
+    else:
+        for t, vals in sorted(coefs.items()):
+            coef_rows.append({
+                "asset": label,
+                "tenor": t,
+                "a": round(vals["a"], 6),
+                "b": round(vals["b"], 6),
+                "c": round(vals["c"], 6),
+                "r2": round(vals["r2"], 4),
+                "rmse": round(vals["rmse"], 4),
+                "n": vals["n"],
+            })
 
-    svi_coef_rows = []
-    for t, vals in sorted(svi_coefs.items()):
-        svi_coef_rows.append({
-            "asset": label,
-            "tenor": t,
-            "a": round(vals["a"], 6),
-            "b": round(vals["b"], 6),
-            "rho": round(vals["rho"], 6),
-            "m": round(vals["m"], 6),
-            "sigma": round(vals["sigma"], 6),
-            "rmse": round(vals["rmse"], 6),
-            "n": vals["n"],
-            "forward": vals.get("forward", float("nan")),
-            "calendar_violations": vals.get("calendar_violations", 0),
-        })
+    return pd.DataFrame(coef_rows)
 
-    return (
-        pd.DataFrame(repo_rows),
-        pd.DataFrame(iv_rows),
-        pd.DataFrame(coef_rows),
-        pd.DataFrame(svi_coef_rows),
-    )
+
+def analyze_asset(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version, fit_model):
+    base = compute_asset_base(label, spot, divs, ydiv, quotes, curve, american, per_tenor, version)
+    coef_df = fit_asset_from_base(label, spot, base, fit_model)
+    return base["repo_df"], base["iv_df"], coef_df
 
 
 def fitted_iv_from_row(row, x_grid, fit_model, tenor):
@@ -755,69 +772,128 @@ st.markdown(
     "and visualizes the fitted quadratic or SVI surface."
 )
 
-if not run_clicked:
+if "analysis_state" not in st.session_state:
+    st.session_state.analysis_state = None
+if "fit_cache" not in st.session_state:
+    st.session_state.fit_cache = {}
+
+if run_clicked:
+    try:
+        with st.spinner("Loading market data..."):
+            if mode == "Fetch latest data":
+                fred_key = get_secret("FRED_API_KEY")
+                if not fred_key:
+                    st.error("Missing FRED_API_KEY in Streamlit secrets.")
+                    st.stop()
+                data = load_latest_cached(fred_key, DATA_FETCH_VERSION)
+                source_label = "Latest available yfinance option chains + FRED Treasury curve"
+            else:
+                if uploaded is None:
+                    st.error("Upload an OptionData.xlsx file first.")
+                    st.stop()
+                data = load_excel_from_upload(uploaded)
+                source_label = uploaded.name
+    except Exception as exc:
+        st.error(str(exc))
+        st.stop()
+
+    assets_to_compute = []
+    if asset_choice in ("SPX", "Both"):
+        if data.get("spx_quotes"):
+            assets_to_compute.append({
+                "label": "SPX",
+                "spot": data["spx_spot"],
+                "divs": [],
+                "ydiv": data.get("spx_div_yield", SPX_DIV_YIELD),
+                "quotes": data["spx_quotes"],
+                "american": False,
+                "rates": data["spx_rates"],
+            })
+        else:
+            st.warning("SPX option chains are temporarily unavailable from yfinance.")
+    if asset_choice in ("SPY", "Both"):
+        if data.get("spy_quotes"):
+            assets_to_compute.append({
+                "label": "SPY",
+                "spot": data["spy_spot"],
+                "divs": data.get("spy_divs", SPY_DIVS),
+                "ydiv": data.get("spy_div_yield", fallback_spy_div_yield(data["spy_spot"])),
+                "quotes": data["spy_quotes"],
+                "american": True,
+                "rates": data["spy_rates"],
+            })
+        else:
+            st.warning("SPY option chains are temporarily unavailable from yfinance.")
+
+    if not assets_to_compute:
+        st.error("No usable option quotes are available for the selected asset.")
+        st.stop()
+
+    computed_assets = []
+    for asset in assets_to_compute:
+        with st.spinner(f"Computing {asset['label']} repo curve and IVs..."):
+            base = compute_asset_base(
+                asset["label"], asset["spot"], asset["divs"], asset["ydiv"], asset["quotes"],
+                data["curve"], asset["american"], asset["rates"], DATA_FETCH_VERSION
+            )
+        computed_assets.append({
+            "label": asset["label"],
+            "spot": asset["spot"],
+            "american": asset["american"],
+            "base": base,
+        })
+
+    st.session_state.analysis_state = {
+        "run_id": datetime.now(ZoneInfo("America/New_York")).isoformat(),
+        "source_mode": mode,
+        "asset_choice": asset_choice,
+        "source_label": source_label,
+        "data": data,
+        "assets": computed_assets,
+        "run_time_et": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z"),
+    }
+    st.session_state.fit_cache = {}
+
+if st.session_state.analysis_state is None:
     st.info("Choose a data source in the sidebar and click Run analysis.")
     st.stop()
 
-try:
-    with st.spinner("Loading market data..."):
-        if mode == "Fetch latest data":
-            fred_key = get_secret("FRED_API_KEY")
-            if not fred_key:
-                st.error("Missing FRED_API_KEY in Streamlit secrets.")
-                st.stop()
-            data = load_latest_cached(fred_key, DATA_FETCH_VERSION)
-            source_label = "Latest available yfinance option chains + FRED Treasury curve"
-        else:
-            if uploaded is None:
-                st.error("Upload an OptionData.xlsx file first.")
-                st.stop()
-            data = load_excel_from_upload(uploaded)
-            source_label = uploaded.name
-except Exception as exc:
-    st.error(str(exc))
-    st.stop()
+state = st.session_state.analysis_state
+data = state["data"]
+source_label = state["source_label"]
+assets = state["assets"]
 
-assets = []
-if asset_choice in ("SPX", "Both"):
-    if data.get("spx_quotes"):
-        assets.append((
-            "SPX", data["spx_spot"], [], data.get("spx_div_yield", SPX_DIV_YIELD),
-            data["spx_quotes"], False, data["spx_rates"]
-        ))
-    else:
-        st.warning("SPX option chains are temporarily unavailable from yfinance.")
-if asset_choice in ("SPY", "Both"):
-    if data.get("spy_quotes"):
-        assets.append((
-            "SPY", data["spy_spot"], data.get("spy_divs", SPY_DIVS),
-            data.get("spy_div_yield", fallback_spy_div_yield(data["spy_spot"])),
-            data["spy_quotes"], True, data["spy_rates"]
-        ))
-    else:
-        st.warning("SPY option chains are temporarily unavailable from yfinance.")
-
-if not assets:
-    st.error("No usable option quotes are available for the selected asset.")
-    st.stop()
+if asset_choice != state["asset_choice"]:
+    st.info(
+        f"Showing the last run for {state['asset_choice']}. "
+        "Click Run analysis again to recompute IVs for the newly selected asset."
+    )
 
 st.subheader("Run Summary")
 cols = st.columns(4)
-cols[0].metric("Source", mode)
+cols[0].metric("Source", state["source_mode"])
 cols[1].metric("SPX spot", f"{data['spx_spot']:,.2f}")
 cols[2].metric("SPY spot", f"{data['spy_spot']:,.2f}")
-run_time_et = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z")
-cols[3].metric("Run time (ET)", run_time_et)
+cols[3].metric("Run time (ET)", state["run_time_et"])
 st.caption(source_label)
 for warning in data.get("warnings", []):
     st.warning(warning)
 
-for label, spot, divs, ydiv, quotes, american, rates in assets:
-    with st.spinner(f"Computing {label} surface..."):
-        repo_df, iv_df, quad_coef_df, svi_coef_df = analyze_asset(
-            label, spot, divs, ydiv, quotes, data["curve"], american, rates, DATA_FETCH_VERSION, fit_model
-        )
-        coef_df = svi_coef_df if is_svi_mode(fit_model) else quad_coef_df
+for asset in assets:
+    label = asset["label"]
+    spot = asset["spot"]
+    american = asset["american"]
+    base = asset["base"]
+    repo_df = base["repo_df"]
+    iv_df = base["iv_df"]
+
+    fit_key = (state["run_id"], label, fit_model)
+    if fit_key in st.session_state.fit_cache:
+        coef_df = st.session_state.fit_cache[fit_key]
+    else:
+        with st.spinner(f"Fitting {label} with {fit_model}..."):
+            coef_df = fit_asset_from_base(label, spot, base, fit_model)
+        st.session_state.fit_cache[fit_key] = coef_df
 
     if coef_df.empty:
         st.warning(f"{fit_model} fit could not be calibrated for {label} with the current cleaned quotes.")
