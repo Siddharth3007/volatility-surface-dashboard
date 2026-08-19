@@ -23,6 +23,21 @@ A PDF copy is also available for download:
 
 [PDF Documentation](docs/IV_Project_Final_Document.pdf)
 
+## Sample SVI RMSE comparison
+
+In one latest-data SPX run, multi-start SVI reduced total-variance RMSE versus single-start SLSQP on most fitted tenors:
+
+| Tenor | Single-start RMSE | Multi-start RMSE | Improvement |
+| ---: | ---: | ---: | ---: |
+| 0.0384 | 0.000150 | 0.000043 | 71.5% |
+| 0.0822 | 0.000031 | 0.000031 | 2.2% |
+| 0.1589 | 0.000059 | 0.000054 | 8.0% |
+| 0.2548 | 0.000089 | 0.000024 | 72.5% |
+| 0.5041 | 0.000049 | 0.000021 | 57.5% |
+| 1.0027 | 0.000072 | 0.000025 | 64.9% |
+
+Average SPX improvement was approximately 46%. SPY could not be compared in this run because the available yfinance SPY option chains did not pass the quote-quality filters.
+
 ## Credits and references
 
 - Finite Difference Methods (Explicit, Implicit and Crank-Nicolson): [https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com](https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com)

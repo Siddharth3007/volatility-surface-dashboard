@@ -195,7 +195,22 @@ When an SVI mode is selected, the dashboard also displays SVI-implied risk-neutr
 - Repo curve instability can signal noisy short-tenor data
 - Spikes can come from short-dated OTM put skew
 
-## 7. Limitations
+## 7. Sample SVI RMSE Comparison
+
+In one latest-data SPX run, multi-start SVI reduced total-variance RMSE versus single-start SLSQP on most fitted tenors:
+
+| Tenor | Single-start RMSE | Multi-start RMSE | Improvement |
+| ---: | ---: | ---: | ---: |
+| 0.0384 | 0.000150 | 0.000043 | 71.5% |
+| 0.0822 | 0.000031 | 0.000031 | 2.2% |
+| 0.1589 | 0.000059 | 0.000054 | 8.0% |
+| 0.2548 | 0.000089 | 0.000024 | 72.5% |
+| 0.5041 | 0.000049 | 0.000021 | 57.5% |
+| 1.0027 | 0.000072 | 0.000025 | 64.9% |
+
+Average SPX improvement was approximately 46%. SPY could not be compared in this run because the available yfinance SPY option chains did not pass the quote-quality filters.
+
+## 8. Limitations
 
 - Yahoo Finance data may be delayed or stale
 - Bid/ask quality varies
@@ -204,7 +219,7 @@ When an SVI mode is selected, the dashboard also displays SVI-implied risk-neutr
 - Repo bootstrapping can be unstable for short tenors
 - This is not intended for trading or risk decisions
 
-## 8. Future Improvements
+## 9. Future Improvements
 
 - More robust static arbitrage checks
 - Calendar/butterfly violation flags
@@ -213,14 +228,14 @@ When an SVI mode is selected, the dashboard also displays SVI-implied risk-neutr
 - Fit-quality metrics and residual plots
 - Historical surface snapshots
 
-## 9. Deployment
+## 10. Deployment
 
 - Built with Streamlit
 - Hosted on Streamlit Cloud
 - Uses free data sources
 - Public dashboard link / GitHub repository
 
-## 10. Credits and References
+## 11. Credits and References
 
 - Finite Difference Methods (Explicit, Implicit and Crank-Nicolson): [https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com](https://quintus-zhang.github.io/post/on_pricing_options_with_finite_difference_methods/?utm_source=chatgpt.com)
 - IV and Vol Surfaces: [https://www.youtube.com/watch?v=F_qh827iXFQ](https://www.youtube.com/watch?v=F_qh827iXFQ)
