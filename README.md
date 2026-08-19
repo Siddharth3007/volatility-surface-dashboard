@@ -36,7 +36,7 @@ In one latest-data SPX run, multi-start SVI reduced total-variance RMSE versus s
 | 0.5041 | 0.000049 | 0.000021 | 57.5% |
 | 1.0027 | 0.000072 | 0.000025 | 64.9% |
 
-Average SPX improvement was approximately 46%. SPY could not be compared in this run because the available yfinance SPY option chains did not pass the quote-quality filters.
+Average SPX improvement was approximately 46%.
 
 ## Credits and references
 
