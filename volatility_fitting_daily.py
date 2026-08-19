@@ -355,10 +355,12 @@ def svi_total_variance(x, params):
     return a + b * (rho * (x - m) + np.sqrt((x - m) ** 2 + sigma ** 2))
 
 
-def fit_surface_svi(S, curve, divs, repo, ivs):
+def fit_surface_svi(S, curve, divs, repo, ivs, mode="multi-start"):
     out = {}
-    params_by_tenor = []
+    xs_by_tenor = []
+    ys_by_tenor = []
     fitted_tenors = []
+    forwards = []
     for t, rows in sorted(ivs.items()):
         r = interp_rate(curve, t)
         q = repo[t]
@@ -372,21 +374,36 @@ def fit_surface_svi(S, curve, divs, repo, ivs):
                 ys.append(iv)
         if len(xs) < 8:
             continue
-        try:
-            params, rmse = svi.fit_svi(np.array(xs), np.array(ys), t)
-        except Exception as exc:
-            print(f"WARNING: SVI calibration skipped for tenor {t:.6f}: {exc}")
-            continue
+        xs_by_tenor.append(np.array(xs))
+        ys_by_tenor.append(np.array(ys))
+        fitted_tenors.append(t)
+        forwards.append(F)
+
+    if not fitted_tenors:
+        return out
+
+    try:
+        params_by_tenor, rmse_by_tenor, _, _, _ = svi.svi(
+            xs_by_tenor, ys_by_tenor, np.array(fitted_tenors), mode, forwards[0]
+        )
+    except Exception as exc:
+        print(f"WARNING: SVI calibration skipped: {exc}")
+        return out
+
+    for t, xs, params, rmse, F in zip(fitted_tenors, xs_by_tenor, params_by_tenor, rmse_by_tenor, forwards):
         a, b, rho, m, sigma = params
         out[t] = {
             "a": float(a), "b": float(b), "rho": float(rho), "m": float(m),
-            "sigma": float(sigma), "rmse": float(rmse), "n": len(ys),
+            "sigma": float(sigma), "rmse": float(rmse), "n": len(xs), "forward": float(F),
         }
-        fitted_tenors.append(t)
-        params_by_tenor.append(params)
 
     if len(params_by_tenor) >= 2:
-        violations = svi.calendar_arb_check(params_by_tenor, fitted_tenors)
+        violations = []
+        for i in range(1, len(params_by_tenor)):
+            _, tenor_violations, _ = svi.calendar_arb_check(
+                params_by_tenor[i], params_by_tenor[i - 1], xs_by_tenor[i], fitted_tenors[i], fitted_tenors[i - 1]
+            )
+            violations += tenor_violations
         violation_counts = {}
         for t1, t2, _ in violations:
             violation_counts[(t1, t2)] = violation_counts.get((t1, t2), 0) + 1
