@@ -390,11 +390,18 @@ def fit_surface_svi(S, curve, divs, repo, ivs, mode="multi-start"):
         print(f"WARNING: SVI calibration skipped: {exc}")
         return out
 
-    for t, xs, params, rmse, F in zip(fitted_tenors, xs_by_tenor, params_by_tenor, rmse_by_tenor, forwards):
+    for t, xs, ys, params, rmse, F in zip(fitted_tenors, xs_by_tenor, ys_by_tenor, params_by_tenor, rmse_by_tenor, forwards):
         a, b, rho, m, sigma = params
+        total_var = svi_total_variance(xs, params)
+        fitted_iv = np.sqrt(np.maximum(total_var / t, 0))
+        rmse_iv = float(np.sqrt(np.mean((fitted_iv - ys) ** 2)))
         out[t] = {
             "a": float(a), "b": float(b), "rho": float(rho), "m": float(m),
-            "sigma": float(sigma), "rmse": float(rmse), "n": len(xs), "forward": float(F),
+            "sigma": float(sigma), "rmse": rmse_iv, "rmse_total_variance": float(rmse),
+            "n": len(xs), "forward": float(F),
+            "butterfly_ok": bool(svi.gatheral_check(params, xs)),
+            "moment_ok": bool(svi.lee_check(params)),
+            "parameter_ok": bool(svi.params_check(params, xs)),
         }
 
     if len(params_by_tenor) >= 2:

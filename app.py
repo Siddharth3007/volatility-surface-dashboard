@@ -369,9 +369,13 @@ def fit_asset_from_base(label, spot, base, fit_model):
                 "m": round(vals["m"], 6),
                 "sigma": round(vals["sigma"], 6),
                 "rmse": round(vals["rmse"], 6),
+                "rmse_total_variance": round(vals.get("rmse_total_variance", float("nan")), 8),
                 "n": vals["n"],
                 "forward": vals.get("forward", float("nan")),
                 "calendar_violations": vals.get("calendar_violations", 0),
+                "butterfly_ok": vals.get("butterfly_ok", False),
+                "moment_ok": vals.get("moment_ok", False),
+                "parameter_ok": vals.get("parameter_ok", False),
             })
     else:
         for t, vals in sorted(coefs.items()):
@@ -382,7 +386,7 @@ def fit_asset_from_base(label, spot, base, fit_model):
                 "b": round(vals["b"], 6),
                 "c": round(vals["c"], 6),
                 "r2": round(vals["r2"], 4),
-                "rmse": round(vals["rmse"], 4),
+                "rmse": round(vals["rmse"], 6),
                 "n": vals["n"],
             })
 
@@ -461,7 +465,7 @@ def fitted_surface_figure(asset, iv_df, coef_df, fit_model):
             "log(K/F): %{x:.4f}<br>Tenor: %{y:.4f}<br>IV: %{z:.2f}%<br>"
             "a: %{customdata[0]:.6f}<br>b: %{customdata[1]:.6f}<br>"
             "rho: %{customdata[2]:.6f}<br>m: %{customdata[3]:.6f}<br>"
-            "sigma: %{customdata[4]:.6f}<br>RMSE: %{customdata[5]:.6f}<extra></extra>"
+            "sigma: %{customdata[4]:.6f}<br>IV RMSE: %{customdata[5]:.6f}<extra></extra>"
         ) if is_svi_mode(fit_model) else None,
     ))
 
@@ -528,9 +532,9 @@ def smile_figure(asset, iv_df, coef_df, fit_model):
             x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
             fitted_iv = fitted_iv_from_row(row, x_grid, fit_model, tenor)
             if is_svi_mode(fit_model):
-                fit_label = f"SVI {label} (RMSE={row['rmse']:.4f})"
+                fit_label = f"SVI {label} (IV RMSE={100 * row['rmse']:.3f}%)"
             else:
-                fit_label = f"Fit {label} (R²={row['r2']:.2f})"
+                fit_label = f"Fit {label} (R²={row['r2']:.2f}, IV RMSE={100 * row['rmse']:.3f}%)"
             fig.add_trace(go.Scatter(
                 x=x_grid,
                 y=fitted_iv,
@@ -591,9 +595,9 @@ def front_month_smile_figure(asset, iv_df, coef_df, fit_model):
         x_grid = np.linspace(float(part["log_moneyness"].min()), float(part["log_moneyness"].max()), 100)
         fitted_iv = fitted_iv_from_row(row, x_grid, fit_model, tenor)
         if is_svi_mode(fit_model):
-            fit_name = f"SVI fit (RMSE={row['rmse']:.4f})"
+            fit_name = f"SVI fit (IV RMSE={100 * row['rmse']:.3f}%)"
         else:
-            fit_name = f"Quadratic fit (R²={row['r2']:.2f})"
+            fit_name = f"Quadratic fit (R²={row['r2']:.2f}, IV RMSE={100 * row['rmse']:.3f}%)"
         fig.add_trace(go.Scatter(
             x=x_grid,
             y=fitted_iv,
@@ -723,6 +727,25 @@ def format_percent_table(df, cols):
     return out
 
 
+def status_mark(ok):
+    return "✓" if bool(ok) else "✗"
+
+
+def arbitrage_diagnostics_df(coef_df):
+    rows = []
+    if coef_df.empty:
+        return pd.DataFrame(rows)
+    for _, row in coef_df.sort_values("tenor").iterrows():
+        calendar_count = int(row.get("calendar_violations", 0))
+        rows.append({
+            "tenor": row["tenor"],
+            "butterfly": status_mark(row.get("butterfly_ok", False)),
+            "calendar": "✓" if calendar_count == 0 else f"✗ ({calendar_count})",
+            "moment conditions": status_mark(row.get("moment_ok", False)),
+        })
+    return pd.DataFrame(rows)
+
+
 st.markdown(
     """
     <div class="app-hero">
@@ -750,6 +773,7 @@ with st.sidebar:
             "and finds the one with the best fit. Generally reduced RMSE by ~50-60%."
         ),
     )
+    st.caption("After Run analysis computes IVs, switch fit modes here without running the full analysis again.")
 
     uploaded = None
     if mode == "Fetch latest data":
@@ -939,6 +963,11 @@ for asset in assets:
                 st.plotly_chart(front_month_density_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-density-front-{fit_model}")
 
     with tab_tables:
+        if is_svi_mode(fit_model):
+            st.markdown("**SVI Arbitrage Diagnostics**")
+            st.dataframe(arbitrage_diagnostics_df(coef_df), use_container_width=True, hide_index=True)
+            st.caption("Butterfly uses Gatheral risk-neutral density positivity; calendar counts fitted total-variance violations against adjacent tenors; moment conditions use Lee/Ferhati-style SVI moment checks.")
+
         table_cols = st.columns([1.2, 1.2, 1.6])
         with table_cols[0]:
             st.markdown("**Repo Curve**")
@@ -946,11 +975,13 @@ for asset in assets:
             st.dataframe(repo_show, use_container_width=True, hide_index=True)
         with table_cols[1]:
             st.markdown("**Surface Coefficients**")
-            st.dataframe(coef_df, use_container_width=True, hide_index=True)
+            hidden_cols = ["butterfly_ok", "moment_ok", "parameter_ok"]
+            coef_display = coef_df.drop(columns=[col for col in hidden_cols if col in coef_df], errors="ignore")
+            st.dataframe(coef_display, use_container_width=True, hide_index=True)
             if is_svi_mode(fit_model):
-                st.caption("Raw SVI fits total variance w(x) = a + b[rho(x-m) + sqrt((x-m)^2 + sigma^2)].")
+                st.caption("Raw SVI fits total variance w(x) = a + b[rho(x-m) + sqrt((x-m)^2 + sigma^2)]. rmse is in IV decimal units; rmse_total_variance is the optimizer's total-variance scale.")
             else:
-                st.caption("IV(x) = a + b x + c x^2, x = log(K/F). a: ATM level, b: skew, c: curvature.")
+                st.caption("IV(x) = a + b x + c x^2, x = log(K/F). a: ATM level, b: skew, c: curvature. rmse is in IV decimal units.")
         with table_cols[2]:
             st.markdown("**Implied Vols**")
             st.dataframe(iv_df, use_container_width=True, hide_index=True)
