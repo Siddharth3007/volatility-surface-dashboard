@@ -197,18 +197,32 @@ When an SVI mode is selected, the dashboard also displays SVI-implied risk-neutr
 
 ## 7. Sample SVI RMSE Comparison
 
-In one latest-data SPX run, multi-start SVI reduced total-variance RMSE versus single-start SLSQP on most fitted tenors:
+In one latest-data run, multi-start SVI reduced total-variance RMSE versus single-start SLSQP for both SPX and SPY.
+
+SPX:
 
 | Tenor | Single-start RMSE | Multi-start RMSE | Improvement |
 | ---: | ---: | ---: | ---: |
-| 0.0384 | 0.000150 | 0.000043 | 71.5% |
-| 0.0822 | 0.000031 | 0.000031 | 2.2% |
-| 0.1589 | 0.000059 | 0.000054 | 8.0% |
-| 0.2548 | 0.000089 | 0.000024 | 72.5% |
-| 0.5041 | 0.000049 | 0.000021 | 57.5% |
-| 1.0027 | 0.000072 | 0.000025 | 64.9% |
+| 0.0822 | 0.00004211 | 0.00002469 | 41.4% |
+| 0.1589 | 0.00004768 | 0.00004331 | 9.2% |
+| 0.2548 | 0.00007725 | 0.00003152 | 59.2% |
+| 0.5041 | 0.00010883 | 0.00002108 | 80.6% |
+| 1.0027 | 0.00006738 | 0.00002013 | 70.1% |
 
-Average SPX improvement was approximately 46%.
+Average SPX improvement was approximately 52.1%.
+
+SPY:
+
+| Tenor | Single-start RMSE | Multi-start RMSE | Improvement |
+| ---: | ---: | ---: | ---: |
+| 0.0438 | 0.00026225 | 0.00003122 | 88.1% |
+| 0.0822 | 0.00003889 | 0.00001367 | 64.8% |
+| 0.1589 | 0.00004826 | 0.00004040 | 16.3% |
+| 0.2548 | 0.00002884 | 0.00000706 | 75.5% |
+| 0.4466 | 0.00006977 | 0.00002384 | 65.8% |
+| 1.0795 | 0.00025084 | 0.00012184 | 51.4% |
+
+Average SPY improvement was approximately 60.3%.
 
 ## 8. Limitations
 
