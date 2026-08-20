@@ -956,6 +956,7 @@ for asset in assets:
 
     if is_svi_mode(fit_model):
         with tab_density:
+            st.caption("The risk-neutral density comes from the Breeden-Litzenberger approach and is only approximately true for American options like SPY.")
             density_cols = st.columns([1, 1])
             with density_cols[0]:
                 st.plotly_chart(density_overlay_figure(label, iv_df, coef_df), use_container_width=True, key=f"{label}-density-all-{fit_model}")
