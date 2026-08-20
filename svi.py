@@ -63,16 +63,17 @@ def bounder():
     return bounds
 
 def fit_quality(res, xs):
-    # Returns False if optimization was not successful,
+    # Returns False if optimization was not successful.
     if not res.success:
-        return -1, False
+        return False
     
     params = res.x
     butterfly_check = gatheral_check(params, xs)
+    moment_check = lee_check(params)
     min_var_check = min_total_variance_check(params, xs)
     param_check = params_check(params, xs)
     
-    if min_var_check and param_check and butterfly_check:
+    if min_var_check and param_check and butterfly_check and moment_check:
         return True
     else:
         return False
@@ -99,7 +100,7 @@ def lee_check(params):
 
     return moment_check
 
-def gatheral_check(params, xs):
+def gatheral_values(params, xs):
     x_grid = make_x_grid(xs)
 
     a, b, rho, m, sigma = params
@@ -108,6 +109,11 @@ def gatheral_check(params, xs):
     w_xx = b*sigma**2/((x_grid-m)**2 + sigma**2)**1.5
 
     g = (1 - (0.5*x_grid*w_x/w))**2 - 0.25*(w_x**2)*((1/w) + 0.25) + 0.5*w_xx
+
+    return g
+
+def gatheral_check(params, xs):
+    g = gatheral_values(params, xs)
 
     if np.all(g>=-1e-7):
         return True

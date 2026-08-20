@@ -395,11 +395,20 @@ def fit_surface_svi(S, curve, divs, repo, ivs, mode="multi-start"):
         total_var = svi_total_variance(xs, params)
         fitted_iv = np.sqrt(np.maximum(total_var / t, 0))
         rmse_iv = float(np.sqrt(np.mean((fitted_iv - ys) ** 2)))
+        butterfly_ok = bool(svi.gatheral_check(params, xs))
+        if not butterfly_ok:
+            g_vals = svi.gatheral_values(params, xs)
+            print(
+                "DIAG SVI posthoc Gatheral failure "
+                f"t={t:.6f} params={np.array2string(np.asarray(params), precision=8)} "
+                f"g_min={float(np.min(g_vals)):.10f} "
+                f"g={np.array2string(g_vals, precision=8, threshold=200)}"
+            )
         out[t] = {
             "a": float(a), "b": float(b), "rho": float(rho), "m": float(m),
             "sigma": float(sigma), "rmse": rmse_iv, "rmse_total_variance": float(rmse),
             "n": len(xs), "forward": float(F),
-            "butterfly_ok": bool(svi.gatheral_check(params, xs)),
+            "butterfly_ok": butterfly_ok,
             "moment_ok": bool(svi.lee_check(params)),
             "parameter_ok": bool(svi.params_check(params, xs)),
         }
